@@ -1,5 +1,5 @@
 package main
 
 // Version is set at build time via -ldflags "-X main.Version=<ver>".
-// Falls back to "0.39.1" when built without the flag (e.g. `go run .`).
-var Version = "0.39.1"
+// Falls back to "0.40.0" when built without the flag (e.g. `go run .`).
+var Version = "0.40.0"
