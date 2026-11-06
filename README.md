@@ -1,8 +1,14 @@
 # ExoDeck
 
-[![CI](https://github.com/ExoDeck/exodeck/actions/workflows/ci.yml/badge.svg)](https://github.com/ExoDeck/exodeck/actions/workflows/ci.yml)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/ExoDeck/exodeck)](https://golang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <img src="frontend/logo.svg" width="100" height="100" alt="ExoDeck Logo" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/ExoDeck/exodeck/actions/workflows/ci.yml"><img src="https://github.com/ExoDeck/exodeck/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/github/go-mod/go-version/ExoDeck/exodeck" alt="Go Version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+</p>
 
 > **Local-first knowledge management & browser cockpit.**
 

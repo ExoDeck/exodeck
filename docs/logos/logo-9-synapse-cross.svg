@@ -1,0 +1,15 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ExoDeck Option 9: The Synapse Cross (Convergence of 4 Knowledge Media) -->
+  <!-- Central Connectivity Ring (Indigo) -->
+  <circle cx="64" cy="64" r="22" stroke="#4F46E5" stroke-width="8"/>
+  <!-- Top Node Card (Grid - Cyan) -->
+  <rect x="51" y="14" width="26" height="34" rx="6" fill="#00E5FF"/>
+  <!-- Bottom Node Card (Whiteboard - Indigo) -->
+  <rect x="51" y="80" width="26" height="34" rx="6" fill="#4F46E5"/>
+  <!-- Left Node Card (BPMN - Cyan) -->
+  <rect x="14" y="51" width="34" height="26" rx="6" fill="#00E5FF"/>
+  <!-- Right Node Card (Markdown Notes - Indigo) -->
+  <rect x="80" y="51" width="34" height="26" rx="6" fill="#4F46E5"/>
+  <!-- Central Pulse Synapse (Cyan) -->
+  <circle cx="64" cy="64" r="7" fill="#00E5FF"/>
+</svg>

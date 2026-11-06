@@ -1,0 +1,13 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ExoDeck Option 5: The Stepped Grid (Modernized Sidebar Spine + Modular Cards) -->
+  <!-- Left Spine / Sidebar Pillar (Electric Cyan) -->
+  <rect x="18" y="22" width="16" height="84" rx="8" fill="#00E5FF"/>
+  <!-- Top Modular Card (Indigo with Cyan Accent) -->
+  <rect x="44" y="22" width="66" height="38" rx="8" fill="#4F46E5"/>
+  <rect x="54" y="34" width="28" height="6" rx="3" fill="#00E5FF"/>
+  <circle cx="94" cy="37" r="4" fill="#00E5FF"/>
+  <!-- Bottom Modular Card (Indigo with Cyan Accent) -->
+  <rect x="44" y="68" width="66" height="38" rx="8" fill="#4F46E5"/>
+  <rect x="54" y="80" width="18" height="14" rx="3" fill="#00E5FF"/>
+  <rect x="78" y="80" width="22" height="14" rx="3" fill="#00E5FF"/>
+</svg>

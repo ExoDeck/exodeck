@@ -1,0 +1,10 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ExoDeck Option 1: The Hex-Cortex (Exocortex Shield + Modular Deck) -->
+  <!-- Outer Exo-Hexagon Bracket (Cyan) -->
+  <path d="M64 12L112 39.5V88.5L64 116L16 88.5V39.5L64 12Z" stroke="#00E5FF" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Inner Floating Deck Modules (Indigo & Cyan) -->
+  <rect x="38" y="38" width="52" height="12" rx="4" fill="#4F46E5"/>
+  <rect x="38" y="58" width="23" height="32" rx="4" fill="#00E5FF"/>
+  <rect x="67" y="58" width="23" height="14" rx="4" fill="#4F46E5"/>
+  <rect x="67" y="76" width="23" height="14" rx="4" fill="#4F46E5"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ExoDeck Option 7: The Prism Cube (3D Modular Floating Knowledge Block) -->
+  <!-- Top Facet / Launch Deck (Electric Cyan) -->
+  <path d="M64 16L104 38L64 60L24 38L64 16Z" fill="#00E5FF"/>
+  <!-- Left Facet / Document & Notes Deck (Royal Indigo) -->
+  <path d="M22 43L61 64.5V110L22 88.5V43Z" fill="#4F46E5"/>
+  <!-- Right Facet / Whiteboard & BPMN Deck (Deep Indigo / Cobalt) -->
+  <path d="M67 64.5L106 43V88.5L67 110V64.5Z" fill="#3730A3"/>
+  <!-- Inner Accents (Cyan details on Indigo facets) -->
+  <line x1="32" y1="62" x2="52" y2="73" stroke="#00E5FF" stroke-width="4" stroke-linecap="round"/>
+  <line x1="32" y1="74" x2="46" y2="82" stroke="#00E5FF" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="86" cy="74" r="5" fill="#00E5FF"/>
+</svg>

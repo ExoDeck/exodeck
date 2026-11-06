@@ -1,0 +1,13 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- ExoDeck Option 6: The Neural Vault (Master Security Shield + Cognitive Core) -->
+  <!-- Vault Shackle / Exo-Arch (Electric Cyan) -->
+  <path d="M44 54V34C44 22.9543 52.9543 14 64 14C75.0457 14 84 22.9543 84 34V54" stroke="#00E5FF" stroke-width="12" stroke-linecap="round"/>
+  <!-- Vault Body (Royal Indigo) -->
+  <rect x="26" y="48" width="76" height="66" rx="16" fill="#4F46E5"/>
+  <!-- Keyhole & Cognitive Core (Electric Cyan) -->
+  <circle cx="64" cy="74" r="8" fill="#00E5FF"/>
+  <path d="M60.5 76L57 96H71L67.5 76H60.5Z" fill="#00E5FF"/>
+  <!-- Cyber Side Accent Slots -->
+  <rect x="34" y="66" width="4" height="30" rx="2" fill="#00E5FF" fill-opacity="0.4"/>
+  <rect x="90" y="66" width="4" height="30" rx="2" fill="#00E5FF" fill-opacity="0.4"/>
+</svg>

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExoDeck Logo Showcase — 10 Variations</title>
+  <style>
+    :root {
+      --bg: #0B0F19;
+      --card-bg: #151D2E;
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+      --border: #1E293B;
+      --accent: #00E5FF;
+      --brand: #4F46E5;
+    }
+    body.light-theme {
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --text: #0F172A;
+      --text-muted: #64748B;
+      --border: #E2E8F0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 40px 24px;
+      transition: background-color 0.2s, color 0.2s;
+    }
+    .header {
+      max-width: 1400px;
+      margin: 0 auto 36px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .title-group h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .title-group p {
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-size: 15px;
+    }
+    .theme-toggle-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: border-color 0.2s;
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--accent);
+    }
+    .grid {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(0, 229, 255, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      min-height: 52px;
+    }
+    .preview-box {
+      border-radius: 10px;
+      padding: 24px 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 150px;
+      background: rgba(0,0,0,0.22);
+      border: 1px dashed var(--border);
+    }
+    body.light-theme .preview-box {
+      background: #F1F5F9;
+    }
+    .preview-box img, .preview-box svg {
+      width: 96px;
+      height: 96px;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15));
+    }
+    .sizes-section {
+      margin-top: 4px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+    .sizes-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .sizes-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .size-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    .size-item span {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .taskbar-mockup {
+      margin-top: 10px;
+      background: #11141B;
+      border: 1px solid #242B3B;
+      border-radius: 8px;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .taskbar-icon-slot {
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+    }
+    .taskbar-label {
+      font-size: 11px;
+      color: #7E8B9F;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="title-group">
+      <h1>ExoDeck Logo Showcase</h1>
+      <p>10 two-color vector variations designed for Windows Taskbar legibility and GitHub README branding.</p>
+    </div>
+    <button class="theme-toggle-btn" id="themeBtn" onclick="toggleTheme()">Toggle Light/Dark Background</button>
+  </header>
+
+  <main class="grid">
+
+    <!-- Option 1 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">1. The Hex-Cortex</h2>
+        <span class="card-badge">Cybernetic / Shield</span>
+      </div>
+      <p class="card-desc">An outer hexagonal exocortex bracket holding a structured 3-part cockpit deck. Evokes augmented intelligence, protection, and modular cards.</p>
+      <div class="preview-box">
+        <img src="logo-1-hex-cortex.svg" alt="Hex-Cortex Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-1-hex-cortex.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-1-hex-cortex.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-1-hex-cortex.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-1-hex-cortex.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-1-hex-cortex.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 2 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">2. The XD Monogram</h2>
+        <span class="card-badge">Command & Brand</span>
+      </div>
+      <p class="card-desc">Direct fusion of the letters 'X' and 'D' (reflecting the <code>xd</code> executable and ExoDeck name) with an embedded modular card core.</p>
+      <div class="preview-box">
+        <img src="logo-2-xd-monogram.svg" alt="XD Monogram Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-2-xd-monogram.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-2-xd-monogram.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-2-xd-monogram.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-2-xd-monogram.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-2-xd-monogram.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 3 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">3. The Cyberdeck</h2>
+        <span class="card-badge">Launchpad / Console</span>
+      </div>
+      <p class="card-desc">Layered horizontal command trays with an ascending forward apex arrow. Symbolizes starting up your daily cockpit and launching into web navigation.</p>
+      <div class="preview-box">
+        <img src="logo-3-cyber-deck.svg" alt="Cyberdeck Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-3-cyber-deck.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-3-cyber-deck.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-3-cyber-deck.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-3-cyber-deck.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-3-cyber-deck.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 4 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">4. The Orbital Core</h2>
+        <span class="card-badge">Symmetrical & Bold</span>
+      </div>
+      <p class="card-desc">Dual circular Exo-brackets framing a 2x2 modular matrix (representing grid links, notes, whiteboard, and diagrams). Exceptionally sharp at 16px.</p>
+      <div class="preview-box">
+        <img src="logo-4-orbital-core.svg" alt="Orbital Core Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-4-orbital-core.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-4-orbital-core.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-4-orbital-core.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-4-orbital-core.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-4-orbital-core.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 5 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">5. The Stepped Grid</h2>
+        <span class="card-badge">StartGRD Evolution</span>
+      </div>
+      <p class="card-desc">A modernized evolution of StartGRD: cyan sidebar spine on the left + stacked indigo modular cards with data slots on the right.</p>
+      <div class="preview-box">
+        <img src="logo-5-matrix-chevron.svg" alt="Stepped Grid Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-5-matrix-chevron.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-5-matrix-chevron.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-5-matrix-chevron.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-5-matrix-chevron.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-5-matrix-chevron.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 6 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">6. The Neural Vault</h2>
+        <span class="card-badge">Security & Shield</span>
+      </div>
+      <p class="card-desc">A stylized master password vault with an electric cyan shackle arch and cognitive keyhole core. Emphasizes privacy, AES-GCM encryption, and sovereignty.</p>
+      <div class="preview-box">
+        <img src="logo-6-neural-vault.svg" alt="Neural Vault Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-6-neural-vault.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-6-neural-vault.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-6-neural-vault.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-6-neural-vault.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-6-neural-vault.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 7 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">7. The Prism Cube</h2>
+        <span class="card-badge">3D Modular Block</span>
+      </div>
+      <p class="card-desc">An isometric 3D floating knowledge block. Top launch deck in cyan with indigo side facets for notes and whiteboards. High-tech developer tool vibe.</p>
+      <div class="preview-box">
+        <img src="logo-7-prism-cube.svg" alt="Prism Cube Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-7-prism-cube.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-7-prism-cube.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-7-prism-cube.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-7-prism-cube.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-7-prism-cube.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 8 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">8. The Pulse Chevron</h2>
+        <span class="card-badge">Flight Radar & Speed</span>
+      </div>
+      <p class="card-desc">Dual forward-pointing chevrons (&gt;&gt;) representing flight direction and quick browser navigation. Razor sharp silhouette that stands out on any taskbar.</p>
+      <div class="preview-box">
+        <img src="logo-8-pulse-chevron.svg" alt="Pulse Chevron Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-8-pulse-chevron.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-8-pulse-chevron.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-8-pulse-chevron.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-8-pulse-chevron.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-8-pulse-chevron.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 9 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">9. The Synapse Cross</h2>
+        <span class="card-badge">4 Media Convergence</span>
+      </div>
+      <p class="card-desc">Four modular card nodes converging on a central pulse gateway. Directly symbolizes the 4 core page types: Grid, Markdown, Whiteboard, and BPMN.</p>
+      <div class="preview-box">
+        <img src="logo-9-synapse-cross.svg" alt="Synapse Cross Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-9-synapse-cross.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-9-synapse-cross.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-9-synapse-cross.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-9-synapse-cross.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-9-synapse-cross.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option 10 -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">10. The Card Cascade</h2>
+        <span class="card-badge">Tactile Deck & Notes</span>
+      </div>
+      <p class="card-desc">Three overlapping, fanned modular cards with title bars and note lines. Evokes tactile card decks, sliding note drawers, and organized workspaces.</p>
+      <div class="preview-box">
+        <img src="logo-10-card-cascade.svg" alt="Card Cascade Logo">
+      </div>
+      <div class="sizes-section">
+        <div class="sizes-label">Taskbar & Icon Scale</div>
+        <div class="sizes-row">
+          <div class="size-item"><img src="logo-10-card-cascade.svg" width="48" height="48"><span>48px</span></div>
+          <div class="size-item"><img src="logo-10-card-cascade.svg" width="32" height="32"><span>32px</span></div>
+          <div class="size-item"><img src="logo-10-card-cascade.svg" width="24" height="24"><span>24px</span></div>
+          <div class="size-item"><img src="logo-10-card-cascade.svg" width="16" height="16"><span>16px</span></div>
+        </div>
+        <div class="taskbar-mockup">
+          <div class="taskbar-icon-slot"><img src="logo-10-card-cascade.svg" width="20" height="20"></div>
+          <div class="taskbar-label">Windows Taskbar (32px slot)</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('light-theme');
+    }
+  </script>
+</body>
+</html>
