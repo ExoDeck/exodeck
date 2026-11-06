@@ -1,0 +1,20 @@
+{
+  "name": "exodeck",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint:js": "eslint frontend/",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#build\" \"#dist\" \"#.github\" \"#frontend/vendor\" \"#prompts\"",
+    "lint": "npm run lint:js && npm run lint:md",
+    "build:icons": "node scripts/build-icons.js"
+  },
+  "dependencies": {
+    "marked": "^18.0.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "markdownlint-cli2": "^0.23.0"
+  }
+}

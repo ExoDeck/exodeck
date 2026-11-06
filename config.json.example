@@ -1,0 +1,18 @@
+{
+  "theme": "dark",
+  "groupbox_max_width": 420,
+  "font_size_ui": 16,
+  "font_size_note": 16,
+  "font_size_links": 16,
+  "port": 8000,
+  "workspaces": [
+    {
+      "name": "Default",
+      "path": "./data",
+      "hidden": false
+    }
+  ],
+  "enable_git_sync": false,
+  "log_level": "info",
+  "log_file": ""
+}

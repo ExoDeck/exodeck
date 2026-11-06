@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  lint-js-md:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint:js
+
+      - name: Run markdownlint
+        run: npm run lint:md
+
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Install goversioninfo
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Regenerate Windows resource files
+        run: |
+          VERSION=$(grep -oP '(?<=var Version = ")[^"]+' version.go || echo "dev")
+          if [ "$VERSION" = "dev" ]; then
+            echo "No version found in version.go, using 0.0.0"
+            VERSION="0.0.0"
+          fi
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          python3 - <<PYEOF
+          import json, pathlib
+          vi = json.loads(pathlib.Path("versioninfo.json").read_text())
+          vi["FixedFileInfo"]["FileVersion"].update({"Major":${MAJOR:-0},"Minor":${MINOR:-0},"Patch":${PATCH:-0}})
+          vi["FixedFileInfo"]["ProductVersion"].update({"Major":${MAJOR:-0},"Minor":${MINOR:-0},"Patch":${PATCH:-0}})
+          vi["StringFileInfo"]["FileVersion"] = "$VERSION"
+          vi["StringFileInfo"]["ProductVersion"] = "$VERSION"
+          pathlib.Path("_versioninfo_tmp.json").write_text(json.dumps(vi, indent=2))
+          PYEOF
+          goversioninfo -platform-specific _versioninfo_tmp.json
+          rm _versioninfo_tmp.json
+          echo "resource_windows_*.syso regenerated for v$VERSION"
+
+      - name: Run Go tests with coverage
+        run: go test -v -count=1 -coverprofile=coverage.out ./...
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+          if-no-files-found: error
+
+      - name: Build Go binary
+        run: |
+          VERSION=$(grep -oP '(?<=var Version = ")[^"]+' version.go || echo "dev")
+          if [ "$VERSION" = "dev" ]; then
+            VERSION="0.0.0"
+          fi
+          go build -ldflags="-s -w -X main.Version=${VERSION}" -o dist/xd .
+          echo "Binary size: $(du -sh dist/xd | cut -f1)"

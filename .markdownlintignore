@@ -1,0 +1,9 @@
+# Exclude development prompt files from markdown linting
+.github/prompts/
+# Exclude CI workflow documentation (long prose/tables)
+.github/workflows/README.md
+# Exclude GitHub issue and PR templates
+.github/ISSUE_TEMPLATE/
+.github/PULL_REQUEST_TEMPLATE.md
+# Exclude vendor directory (third-party content)
+frontend/vendor/

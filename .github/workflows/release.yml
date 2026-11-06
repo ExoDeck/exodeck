@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Extract Tag Version
+        id: vars
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building ExoDeck release v${VERSION}"
+
+      - name: Install goversioninfo
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Regenerate Windows resource files
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          python3 - <<PYEOF
+          import json, pathlib
+          vi = json.loads(pathlib.Path("versioninfo.json").read_text())
+          vi["FixedFileInfo"]["FileVersion"].update({"Major":${MAJOR:-0},"Minor":${MINOR:-0},"Patch":${PATCH:-0}})
+          vi["FixedFileInfo"]["ProductVersion"].update({"Major":${MAJOR:-0},"Minor":${MINOR:-0},"Patch":${PATCH:-0}})
+          vi["StringFileInfo"]["FileVersion"] = "$VERSION"
+          vi["StringFileInfo"]["ProductVersion"] = "$VERSION"
+          pathlib.Path("_versioninfo_tmp.json").write_text(json.dumps(vi, indent=2))
+          PYEOF
+          goversioninfo -platform-specific _versioninfo_tmp.json
+          rm _versioninfo_tmp.json
+
+      - name: Build cross-platform binaries
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          LDFLAGS="-s -w -X main.Version=${VERSION}"
+          mkdir -p dist/bin dist/archives
+
+          # Windows amd64
+          GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd.exe .
+          (cd dist/bin && zip ../archives/exodeck-windows-amd64.zip xd.exe)
+          rm dist/bin/xd.exe
+
+          # Windows arm64
+          GOOS=windows GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd.exe .
+          (cd dist/bin && zip ../archives/exodeck-windows-arm64.zip xd.exe)
+          rm dist/bin/xd.exe
+
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
+          tar -czf dist/archives/exodeck-linux-amd64.tar.gz -C dist/bin xd
+          rm dist/bin/xd
+
+          # Linux arm64
+          GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
+          tar -czf dist/archives/exodeck-linux-arm64.tar.gz -C dist/bin xd
+          rm dist/bin/xd
+
+          # Darwin (macOS) amd64
+          GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
+          tar -czf dist/archives/exodeck-darwin-amd64.tar.gz -C dist/bin xd
+          rm dist/bin/xd
+
+          # Darwin (macOS) arm64
+          GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
+          tar -czf dist/archives/exodeck-darwin-arm64.tar.gz -C dist/bin xd
+          rm dist/bin/xd
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/archives/*
+          name: ExoDeck v${{ steps.vars.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false

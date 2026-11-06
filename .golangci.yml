@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - ineffassign
+    - govet
+    - unused
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+  exclusions:
+    paths:
+      - node_modules
+      - frontend/vendor
+    rules:
+      - path: 'node_modules.*'
+        text: ".*"

@@ -1,0 +1,32 @@
+{
+  "page-name": "Welcome",
+  "hidden": false,
+  "groups": [
+    {
+      "title": "Welcome to ExoDeck",
+      "items": [
+        {
+          "title": "Getting Started",
+          "text": "IyBXZWxjb21lIHRvIEV4b0RlY2shCgpFeG9EZWNrIGlzIHlvdXIgbG9jYWwtZmlyc3QgcGVyc29uYWwga25vd2xlZGdlIG1hbmFnZW1lbnQgKHBrbSkgYW5kIGJyb3dzZXIgY29ja3BpdC4="
+        },
+        {
+          "title": "ExoDeck on GitHub",
+          "url": "https://github.com/ExoDeck/exodeck"
+        }
+      ]
+    },
+    {
+      "title": "Quick Links",
+      "items": [
+        {
+          "title": "GitHub",
+          "url": "https://github.com"
+        },
+        {
+          "title": "DuckDuckGo",
+          "url": "https://duckduckgo.com"
+        }
+      ]
+    }
+  ]
+}

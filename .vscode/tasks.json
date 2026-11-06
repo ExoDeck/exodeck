@@ -1,0 +1,76 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Lint: JavaScript (eslint)",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "lint:js"],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$eslint-stylish"]
+    },
+    {
+      "label": "Lint: Markdown (markdownlint)",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "lint:md"],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": {
+        "owner": "markdownlint",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^(.+):(\\d+)(?::(\\d+))?\\s+(MD\\w+/.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      }
+    },
+    {
+      "label": "Go: Build",
+      "type": "shell",
+      "command": "go",
+      "args": ["build", "-ldflags=-s -w", "-o", "dist/exodeck-go/xd.exe", "."],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Go: Test",
+      "type": "shell",
+      "command": "go",
+      "args": ["test", "./...", "-count=1"],
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": "$go"
+    },
+    {
+      "label": "Lint: All",
+      "dependsOn": [
+        "Lint: JavaScript (eslint)",
+        "Lint: Markdown (markdownlint)"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

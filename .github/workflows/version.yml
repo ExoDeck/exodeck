@@ -1,0 +1,112 @@
+name: Version Bump
+
+# Runs only after the CI workflow completes successfully on main.
+# GitHub Actions does not re-trigger workflows from GITHUB_TOKEN pushes,
+# so the version commit pushed by this workflow will not create a loop.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: ["main"]
+    types: [completed]
+
+jobs:
+  bump:
+    # Only run when CI passed and the triggering actor was not this workflow itself
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to push the version commit and tag
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ------------------------------------------------------------------
+      # Determine the latest version tag
+      # ------------------------------------------------------------------
+      - name: Get latest version tag
+        id: get_tag
+        run: |
+          # List tags that look like v<major>.<minor>.<patch>, highest first
+          LATEST=$(git tag --list 'v*.*.*' --sort=-version:refname | head -n 1)
+          echo "latest_tag=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Latest tag: ${LATEST}"
+
+      # ------------------------------------------------------------------
+      # First-run path: no tag exists yet → use 0.0.0 as initial version
+      # ------------------------------------------------------------------
+      - name: Tag initial version (first run only)
+        if: steps.get_tag.outputs.latest_tag == ''
+        run: |
+          VERSION="0.0.0"
+          
+          # Update version.go using the script
+          chmod +x .github/scripts/update-version.sh
+          .github/scripts/update-version.sh "${VERSION}"
+          
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.go
+          git commit -m "chore: initialize version to ${VERSION}"
+          git tag "v${VERSION}"
+          git push origin HEAD:main "v${VERSION}"
+          echo "Tagged initial version: v${VERSION}"
+
+      # ------------------------------------------------------------------
+      # Subsequent runs: analyse commits since last tag and bump version
+      # ------------------------------------------------------------------
+      - name: Determine bump type
+        id: bump_type
+        if: steps.get_tag.outputs.latest_tag != ''
+        run: |
+          TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          # Collect commit subjects introduced after the last tag
+          COMMITS=$(git log "${TAG}..HEAD" --format="%s")
+          echo "Commits since ${TAG}:"
+          echo "${COMMITS}"
+
+          # Priority: major > feat > patch (default)
+          if echo "${COMMITS}" | grep -qiE '^major(\(.*\))?[!:]'; then
+            BUMP="major"
+          elif echo "${COMMITS}" | grep -qiE '^feat(\(.*\))?[!:]'; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          echo "bump=${BUMP}" >> "$GITHUB_OUTPUT"
+          echo "Bump type: ${BUMP}"
+
+      - name: Compute new version and create tag
+        id: new_version
+        if: steps.get_tag.outputs.latest_tag != ''
+        run: |
+          BUMP="${{ steps.bump_type.outputs.bump }}"
+          TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          VERSION="${TAG#v}"  # Remove leading 'v'
+          IFS='.' read -r major minor patch <<< "$VERSION"
+          if [ "$BUMP" = "major" ]; then
+            major=$((major + 1)); minor=0; patch=0
+          elif [ "$BUMP" = "minor" ]; then
+            minor=$((minor + 1)); patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          NEW="${major}.${minor}.${patch}"
+          echo "new_version=${NEW}" >> "$GITHUB_OUTPUT"
+          echo "New version: ${NEW}"
+          
+          # Update version.go using the script
+          chmod +x .github/scripts/update-version.sh
+          .github/scripts/update-version.sh "${NEW}"
+          
+          # Commit and push the updated version.go
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.go
+          git commit -m "chore: bump version to ${NEW}"
+          git tag "v${NEW}"
+          git push origin HEAD:main "v${NEW}"
+          echo "Released v${NEW}"

@@ -1,0 +1,5 @@
+{
+  "name": "sonarqube",
+  "version": "1.0.0",
+  "description": "SonarQube MCP server for code quality, security analysis, and issues"
+}

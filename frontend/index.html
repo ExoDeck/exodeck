@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    if (window.location.protocol !== 'file:') {
+      const base = document.createElement('base');
+      base.href = '/';
+      document.head.appendChild(base);
+    }
+  </script>
+  <title>ExoDeck</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="vendor/highlight-github-dark.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="app">
+    <!-- Top Header Bar -->
+    <header class="app-header" id="appHeader">
+      <div class="app-header__left">
+        <!-- Hamburger Menu Button -->
+        <button class="btn btn--icon app-header__hamburger-btn" id="hamburgerBtn" aria-label="Open menu" title="Menu">
+          <span class="material-symbols-outlined hamburger-icon" id="hamburgerIcon" aria-hidden="true">menu</span>
+        </button>
+        <div id="hamburgerMenuPanel" class="add-page-menu app-header__menu-panel"></div>
+
+        <!-- Notification Bell Button -->
+        <button type="button" class="btn btn--icon app-header__notification-btn" id="notificationBtn" aria-label="Notifications" title="Due tasks (n)" hidden>
+          <span class="material-symbols-outlined notification-bell-icon" aria-hidden="true">notifications</span>
+          <span class="notification-badge" id="notificationBadge" aria-hidden="true"></span>
+        </button>
+
+        <!-- Workspace Breadcrumb Button (Round left, pointed right C[icon] Name >) -->
+        <button type="button" class="workspace-btn" id="workspaceHeader" title="Workspace Navigator (.)">
+          <span class="workspace-btn__logo">
+            <svg id="defaultLogo" class="sidebar__logo" width="20" height="20" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="0" y="6" width="36" height="78" fill="currentColor"/>
+              <rect x="42" y="6" width="22" height="22" fill="currentColor"/>
+              <rect x="70" y="6" width="22" height="22" fill="currentColor"/>
+              <rect x="42" y="34" width="22" height="22" fill="currentColor"/>
+              <rect x="70" y="34" width="22" height="22" fill="currentColor"/>
+              <rect x="42" y="62" width="22" height="22" fill="currentColor"/>
+              <rect x="70" y="62" width="22" height="22" fill="currentColor"/>
+            </svg>
+            <img id="customWorkspaceLogo" class="sidebar__logo" style="display: none; width: 20px; height: 20px; object-fit: contain;" alt="Workspace Icon" />
+          </span>
+          <span id="currentWorkspaceName" class="workspace-btn__name"></span>
+          <span id="workspaceGitDot" class="git-dot" title="Git Status (Click to Sync)"></span>
+          <svg class="workspace-btn__arrow" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+            <path class="workspace-btn__arrow-fill" d="M -1 0 L 0 0 L 11.4 18 L 0 36 L -1 36 Z" />
+            <path class="workspace-btn__arrow-stroke" d="M -1 0.5 L 0 0.5 L 10.5 18 L 0 35.5 L -1 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+          </svg>
+        </button>
+
+        <!-- Page title directly adjacent to pointed button -->
+        <h1 class="content__title app-header__title" id="pageTitle" aria-live="polite"><span class="sr-only">Page title</span></h1>
+      </div>
+
+      <div class="app-header__right">
+        <!-- Vault Status Badge -->
+        <button type="button" class="btn btn--ghost vault-status-badge" id="_vaultStatusBadge" hidden aria-label="Vault status"></button>
+        <!-- Page Action Icons -->
+        <div class="content__actions" id="contentActions"></div>
+      </div>
+    </header>
+
+    <!-- Main area: Sidebar, Content, and Right Sidebar -->
+    <div class="app-main" id="appMain">
+      <!-- Left Sidebar (Pinned mode or Unpinned strip) -->
+      <aside class="sidebar" id="sidebar">
+        <!-- Unpinned slim border strip with open icon at top -->
+        <div class="sidebar__unpinned-strip" id="sidebarUnpinnedStrip" title="Open outline (s)">
+          <button class="sidebar__open-btn" id="sidebarOpenBtn" aria-label="Open outline" title="Open outline (s)">
+            <svg width="6" height="10" viewBox="0 0 6 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="1.5 1.5 4.5 5 1.5 8.5"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Sidebar Body (Visible when pinned) -->
+        <div class="sidebar__body" id="sidebarBody">
+          <!-- Shared Header -->
+          <div class="nav-header" id="sidebarNavHeader">
+            <span class="nav-header__title" id="sidebarNavTitle">Outline</span>
+            <div class="nav-header__actions">
+              <button type="button" class="btn btn--icon nav-header__btn" id="sidebarExpandCollapseBtn" title="Collapse all (x)">
+                <span class="material-symbols-outlined" aria-hidden="true">unfold_less</span>
+              </button>
+              <button type="button" class="btn btn--icon nav-header__btn" id="sidebarPinBtn" title="Close outline (s)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M9 3v18"></path><path d="m14 9-3 3 3 3"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Outline Tree container -->
+          <div class="sidebar__outline-container" id="sidebarOutlineList"></div>
+        </div>
+
+        <div class="sidebar__resize-handle" id="sidebarResizeHandle" aria-hidden="true"></div>
+      </aside>
+
+      <!-- Content Area -->
+      <main class="content" id="content">
+        <div class="content__grid" id="pageGrid"></div>
+      </main>
+    </div>
+
+    <!-- Floating Navigator Overlay -->
+    <div class="floating-nav" id="floatingNav" hidden>
+      <div class="floating-nav__backdrop" id="floatingNavBackdrop"></div>
+      <div class="floating-nav__panel" id="floatingNavPanel">
+        <!-- Shared Header -->
+        <div class="nav-header" id="floatingNavHeader">
+          <span class="nav-header__title" id="floatingNavTitle">Navigator</span>
+          <div class="nav-header__actions">
+            <button type="button" class="btn btn--icon nav-header__btn" id="floatingNavFolderBtn" title="Folder View" aria-label="Folder View">
+              <span class="material-symbols-outlined" aria-hidden="true">folder</span>
+            </button>
+            <button type="button" class="btn btn--icon nav-header__btn" id="floatingNavExpandCollapseBtn" title="Collapse all (x)">
+              <span class="material-symbols-outlined" aria-hidden="true">unfold_less</span>
+            </button>
+            <button type="button" class="btn btn--icon nav-header__btn" id="floatingNavWorkspaceBtn" title="Switch workspace (#)">
+              <span class="material-symbols-outlined" aria-hidden="true">workspaces</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Workspace Switcher -->
+        <div class="floating-nav__switcher" id="floatingNavSwitcher" role="toolbar" aria-label="Quick workspace switcher"></div>
+
+        <!-- Floating Nav Content Body -->
+        <div class="floating-nav__body" id="floatingNavBody">
+          <nav class="sidebar__nav" id="floatingNavPageList"></nav>
+        </div>
+        <div class="floating-nav__resize-handle" id="floatingNavResizeHandle" aria-hidden="true" title="Resize navigator"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task notification dropdown overlay -->
+  <div class="notification-overlay" id="notificationOverlay" hidden>
+    <div class="notification-overlay__backdrop" id="notificationBackdrop"></div>
+    <dialog class="notification-panel" id="notificationMenuPanel" aria-label="Due tasks">
+      <div class="notification-panel__resize-handle" id="notificationResizeHandle" aria-hidden="true" title="Resize panel"></div>
+    </dialog>
+  </div>
+
+  <!-- Keyboard navigation overlay -->
+  <div class="keynav" id="keyNav" hidden>
+    <div class="keynav__backdrop"></div>
+    <div class="keynav__dialog">
+      <input class="keynav__input" id="keyNavInput" type="text" placeholder="Type to navigate…" aria-label="Keyboard navigation search" autocomplete="off" />
+      <ul class="keynav__results" id="keyNavResults"></ul>
+    </div>
+  </div>
+
+  <!-- Outline navigation overlay -->
+  <div class="keynav keynav--large" id="outlineNav" hidden>
+    <div class="keynav__backdrop"></div>
+    <div class="keynav__dialog">
+      <input class="keynav__input" id="outlineNavInput" type="text" placeholder="Filter headings…" aria-label="Outline navigation search" autocomplete="off" />
+      <ul class="keynav__results" id="outlineNavResults"></ul>
+    </div>
+  </div>
+
+  <!-- Workspace navigation overlay -->
+  <div class="keynav" id="workspaceNav" hidden>
+    <div class="keynav__backdrop"></div>
+    <div class="keynav__dialog">
+      <input class="keynav__input" id="workspaceNavInput" type="text" placeholder="Select workspace…" aria-label="Workspace navigation search" autocomplete="off" />
+      <ul class="keynav__results" id="workspaceNavResults"></ul>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>
