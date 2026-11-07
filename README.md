@@ -122,6 +122,10 @@ Contributions, bug reports, and suggestions are welcome! Please read our [Contri
 
 For security concerns or to report a vulnerability regarding vault encryption or authentication, please refer to our [Security Policy](SECURITY.md).
 
+## Privacy
+
+ExoDeck is local-first software. Your data stays on your machine, with zero telemetry and zero remote tracking. For full details, see our [Privacy Policy](PRIVACY.md).
+
 ## License
 
 ExoDeck is open source software licensed under the [MIT License](LICENSE).
