@@ -36,11 +36,25 @@ Built with a lightweight Go backend and pure vanilla JavaScript/CSS in the front
 
 ## Quick Start
 
-### 1. Pre-built Binaries
+### 1. Install via Windows Package Manager (`winget`)
 
-Download the latest executable (`xd.exe` on Windows or `xd` on Linux/macOS) from the [Releases](https://github.com/ExoDeck/exodeck/releases) page.
+The easiest way to install and update ExoDeck on Windows:
 
-Run the executable:
+```powershell
+winget install ExoDeck.ExoDeck
+```
+
+Once installed, simply run `xd` from any terminal.
+
+### 2. Pre-built Binaries (Direct Download)
+
+Download the latest release archive for your platform from the [Releases](https://github.com/ExoDeck/exodeck/releases) page:
+
+- **Windows**: `exodeck-v1.0.0-windows-amd64.zip` (or `arm64`)
+- **Linux**: `exodeck-v1.0.0-linux-amd64.tar.gz` (or `arm64`)
+- **macOS**: `exodeck-v1.0.0-darwin-amd64.tar.gz` (or Apple Silicon `arm64`)
+
+Extract the archive and run the executable:
 
 ```bash
 ./xd
@@ -48,7 +62,13 @@ Run the executable:
 
 Open your browser to [http://localhost:8000](http://localhost:8000).
 
-### 2. Run from Source
+> [!NOTE]
+> **Windows SmartScreen on First Run**:  
+> As a new open-source project without a commercial code-signing certificate, Windows Defender SmartScreen may display an *"Unrecognized app"* warning when launching `xd.exe` downloaded via a browser.
+> Click **"More info"** &rarr; **"Run anyway"** (or right-click `xd.exe` &rarr; **Properties** &rarr; check **"Unblock"**).
+> Installing via `winget install ExoDeck.ExoDeck` avoids this prompt. All release binaries are built with open provenance on GitHub Actions.
+
+### 3. Run from Source
 
 **Prerequisites:** Go 1.25+ and Node.js 22+ (only needed if building or linting frontend assets).
 
