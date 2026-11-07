@@ -108,6 +108,7 @@ ExoDeck includes complete built-in documentation accessible directly inside the 
 
 - [About & First Run](docs/About.md)
 - [Page Types (`.grid`, `.md`, `.excalidraw`, `.bpmn`)](docs/Page-Types.md)
+- [Password Vault & Encryption](docs/Password-Vault.md)
 - [Keyboard Shortcuts](docs/Keyboard-Shortcuts.md)
 - [Using Markdown](docs/Using-Markdown.md)
 - [License](docs/License.md)

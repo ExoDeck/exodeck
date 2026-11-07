@@ -3,6 +3,7 @@ package handlers
 import (
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -14,10 +15,17 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		upath = "/" + upath
 	}
 
-	// Strip leading slash for FS lookup
-	fpath := strings.TrimPrefix(upath, "/")
-	if fpath == "" {
+	// Clean path to prevent directory traversal
+	cleaned := path.Clean(upath)
+	fpath := strings.TrimPrefix(cleaned, "/")
+	if fpath == "" || fpath == "." {
 		fpath = "index.html"
+	}
+
+	// Reject paths attempting directory traversal or invalid FS paths
+	if !fs.ValidPath(fpath) || strings.HasPrefix(fpath, "..") {
+		http.NotFound(w, r)
+		return
 	}
 
 	// Try to open from frontend sub-FS
@@ -32,7 +40,10 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		// Handle preload scanner issues where relative paths are fetched before the <base> tag is applied
 		parts := strings.Split(fpath, "/")
 		for i := 1; i < len(parts); i++ {
-			fallbackPath := strings.Join(parts[i:], "/")
+			fallbackPath := path.Clean(strings.Join(parts[i:], "/"))
+			if !fs.ValidPath(fallbackPath) || strings.HasPrefix(fallbackPath, "..") {
+				continue
+			}
 			if f2, err2 := fsys.Open(fallbackPath); err2 == nil {
 				_ = f2.Close()
 				r2 := r.Clone(r.Context())
@@ -59,6 +70,10 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	_ = f.Close()
 
 	r2 := r.Clone(r.Context())
-	r2.URL.Path = upath
+	if fpath == "index.html" && upath == "/" {
+		r2.URL.Path = "/"
+	} else {
+		r2.URL.Path = cleaned
+	}
 	http.FileServer(http.FS(fsys)).ServeHTTP(w, r2)
 }

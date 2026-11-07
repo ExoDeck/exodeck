@@ -12,9 +12,7 @@ on:
         default: ''
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   build-windows:
@@ -53,7 +51,7 @@ jobs:
 
       - name: Install goversioninfo
         shell: pwsh
-        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.1
 
       - name: Regenerate Windows resource files
         shell: pwsh
@@ -187,6 +185,10 @@ jobs:
 
   publish:
     name: Publish GitHub Release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     needs: [build-windows, build-unix]
     runs-on: ubuntu-latest
     steps:
