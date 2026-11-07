@@ -19,8 +19,8 @@
     "FileSubType": "00"
   },
   "StringFileInfo": {
-    "Comments": "",
-    "CompanyName": "",
+    "Comments": "ExoDeck — Local-first knowledge management & browser cockpit.",
+    "CompanyName": "ExoDeck",
     "FileDescription": "ExoDeck — Local-first knowledge management & browser cockpit.",
     "FileVersion": "0.9.4",
     "InternalName": "exodeck",

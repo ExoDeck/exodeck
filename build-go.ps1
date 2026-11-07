@@ -92,8 +92,11 @@ if (-not [string]::IsNullOrEmpty($Arch)) {
     $env:GOARCH = $Arch
 }
 
-go build -ldflags="-s -w -X main.Version=$version" -o $outputPath .
+go build "-ldflags=-w -X main.Version=$version" -o $outputPath .
 if ($LASTEXITCODE -ne 0) { throw "go build failed" }
+
+# Copy LICENSE and README.md into output directory for distribution
+Copy-Item "LICENSE", "README.md" $OutputDir -Force
 
 Write-Host "Build successful: $outputPath"
 Write-Host "Binary size: $([int]((Get-Item $outputPath).Length / 1MB)) MB"

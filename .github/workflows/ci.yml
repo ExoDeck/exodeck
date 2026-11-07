@@ -93,5 +93,5 @@ jobs:
           if [ "$VERSION" = "dev" ]; then
             VERSION="0.0.0"
           fi
-          go build -ldflags="-s -w -X main.Version=${VERSION}" -o dist/xd .
+          go build -ldflags="-w -X main.Version=${VERSION}" -o dist/xd .
           echo "Binary size: $(du -sh dist/xd | cut -f1)"

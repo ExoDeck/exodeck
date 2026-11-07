@@ -4,13 +4,117 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag version to release (e.g. v0.42.0, leave empty to read from version.go)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
-  release:
-    name: Build & Release Binaries
+  build-windows:
+    name: Build Windows Binaries
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Extract Tag Version
+        id: vars
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.inputs.tag }}"
+          if (-not $ver) {
+            $ref = "${{ github.ref }}"
+            if ($ref -like "refs/tags/v*") {
+              $ver = $ref.Substring("refs/tags/".Length)
+            } else {
+              $versionLine = Select-String -Path "version.go" -Pattern 'var\s+Version\s*=\s*"([^"]+)"'
+              $ver = if ($versionLine) { "v" + $versionLine.Matches[0].Groups[1].Value } else { "v0.0.0" }
+            }
+          }
+          $cleanVer = $ver.TrimStart('v')
+          Write-Host "Releasing version: $ver (clean: $cleanVer)"
+          "version=$ver" >> $env:GITHUB_OUTPUT
+          "clean_version=$cleanVer" >> $env:GITHUB_OUTPUT
+
+      - name: Install goversioninfo
+        shell: pwsh
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Regenerate Windows resource files
+        shell: pwsh
+        run: |
+          $version = "${{ steps.vars.outputs.clean_version }}"
+          $parts = $version.Split('.')
+          $major = [int]($parts.Count -gt 0 ? $parts[0] : 0)
+          $minor = [int]($parts.Count -gt 1 ? $parts[1] : 0)
+          $patch = [int]($parts.Count -gt 2 ? $parts[2] : 0)
+
+          $vi = Get-Content versioninfo.json -Raw | ConvertFrom-Json
+          $vi.FixedFileInfo.FileVersion.Major    = $major
+          $vi.FixedFileInfo.FileVersion.Minor    = $minor
+          $vi.FixedFileInfo.FileVersion.Patch    = $patch
+          $vi.FixedFileInfo.ProductVersion.Major = $major
+          $vi.FixedFileInfo.ProductVersion.Minor = $minor
+          $vi.FixedFileInfo.ProductVersion.Patch = $patch
+          $vi.StringFileInfo.FileVersion    = $version
+          $vi.StringFileInfo.ProductVersion = $version
+          $vi | ConvertTo-Json -Depth 10 | Set-Content _versioninfo_tmp.json
+          goversioninfo -platform-specific _versioninfo_tmp.json
+          Remove-Item _versioninfo_tmp.json
+          Write-Host "resource_windows_*.syso regenerated for v$version"
+
+      - name: Build and Package Windows amd64 & arm64
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.vars.outputs.version }}"
+          $cleanVer = "${{ steps.vars.outputs.clean_version }}"
+          # Retain symbol table (-w only, without -s) to eliminate AV heuristic false positives
+          $ldflags = "-w -X main.Version=$cleanVer"
+
+          New-Item -ItemType Directory -Force -Path dist\archives, dist\staging | Out-Null
+
+          # Windows amd64
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build "-ldflags=$ldflags" -o dist\staging\xd.exe .
+          Copy-Item LICENSE, README.md dist\staging\
+          $zipAmd64 = "dist\archives\exodeck-$ver-windows-amd64.zip"
+          Compress-Archive -Path dist\staging\* -DestinationPath $zipAmd64
+          Remove-Item dist\staging\* -Force
+
+          # Windows arm64
+          $env:GOOS = "windows"
+          $env:GOARCH = "arm64"
+          go build "-ldflags=$ldflags" -o dist\staging\xd.exe .
+          Copy-Item LICENSE, README.md dist\staging\
+          $zipArm64 = "dist\archives\exodeck-$ver-windows-arm64.zip"
+          Compress-Archive -Path dist\staging\* -DestinationPath $zipArm64
+          Remove-Item dist\staging -Recurse -Force
+
+      - name: Upload Windows Archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-archives
+          path: dist/archives/*
+          if-no-files-found: error
+
+  build-unix:
+    name: Build Linux & macOS Binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -27,70 +131,109 @@ jobs:
       - name: Extract Tag Version
         id: vars
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Building ExoDeck release v${VERSION}"
+          VER="${{ github.event.inputs.tag }}"
+          if [ -z "$VER" ]; then
+            REF="${{ github.ref }}"
+            if [[ "$REF" == refs/tags/v* ]]; then
+              VER="${REF#refs/tags/}"
+            else
+              CLEAN_VER=$(grep -oP '(?<=var Version = ")[^"]+' version.go || echo "0.0.0")
+              VER="v${CLEAN_VER}"
+            fi
+          fi
+          CLEAN_VER="${VER#v}"
+          echo "Releasing version: $VER (clean: $CLEAN_VER)"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "clean_version=$CLEAN_VER" >> "$GITHUB_OUTPUT"
 
-      - name: Install goversioninfo
-        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
-
-      - name: Regenerate Windows resource files
+      - name: Build and Package Linux & macOS Binaries
         run: |
-          VERSION="${{ steps.vars.outputs.version }}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          python3 - <<PYEOF
-          import json, pathlib
-          vi = json.loads(pathlib.Path("versioninfo.json").read_text())
-          vi["FixedFileInfo"]["FileVersion"].update({"Major":${MAJOR:-0},"Minor":${MINOR:-0},"Patch":${PATCH:-0}})
-          vi["FixedFileInfo"]["ProductVersion"].update({"Major":${MAJOR:-0},"Minor":${MINOR:-0},"Patch":${PATCH:-0}})
-          vi["StringFileInfo"]["FileVersion"] = "$VERSION"
-          vi["StringFileInfo"]["ProductVersion"] = "$VERSION"
-          pathlib.Path("_versioninfo_tmp.json").write_text(json.dumps(vi, indent=2))
-          PYEOF
-          goversioninfo -platform-specific _versioninfo_tmp.json
-          rm _versioninfo_tmp.json
+          VER="${{ steps.vars.outputs.version }}"
+          CLEAN_VER="${{ steps.vars.outputs.clean_version }}"
+          LDFLAGS="-s -w -X main.Version=${CLEAN_VER}"
 
-      - name: Build cross-platform binaries
-        run: |
-          VERSION="${{ steps.vars.outputs.version }}"
-          LDFLAGS="-s -w -X main.Version=${VERSION}"
-          mkdir -p dist/bin dist/archives
-
-          # Windows amd64
-          GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd.exe .
-          (cd dist/bin && zip ../archives/exodeck-windows-amd64.zip xd.exe)
-          rm dist/bin/xd.exe
-
-          # Windows arm64
-          GOOS=windows GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd.exe .
-          (cd dist/bin && zip ../archives/exodeck-windows-arm64.zip xd.exe)
-          rm dist/bin/xd.exe
+          mkdir -p dist/archives dist/staging
 
           # Linux amd64
-          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
-          tar -czf dist/archives/exodeck-linux-amd64.tar.gz -C dist/bin xd
-          rm dist/bin/xd
+          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/staging/xd .
+          cp LICENSE README.md dist/staging/
+          tar -czf "dist/archives/exodeck-${VER}-linux-amd64.tar.gz" -C dist/staging xd LICENSE README.md
+          rm -rf dist/staging/*
 
           # Linux arm64
-          GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
-          tar -czf dist/archives/exodeck-linux-arm64.tar.gz -C dist/bin xd
-          rm dist/bin/xd
+          GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/staging/xd .
+          cp LICENSE README.md dist/staging/
+          tar -czf "dist/archives/exodeck-${VER}-linux-arm64.tar.gz" -C dist/staging xd LICENSE README.md
+          rm -rf dist/staging/*
 
           # Darwin (macOS) amd64
-          GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
-          tar -czf dist/archives/exodeck-darwin-amd64.tar.gz -C dist/bin xd
-          rm dist/bin/xd
+          GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/staging/xd .
+          cp LICENSE README.md dist/staging/
+          tar -czf "dist/archives/exodeck-${VER}-darwin-amd64.tar.gz" -C dist/staging xd LICENSE README.md
+          rm -rf dist/staging/*
 
           # Darwin (macOS) arm64
-          GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/bin/xd .
-          tar -czf dist/archives/exodeck-darwin-arm64.tar.gz -C dist/bin xd
-          rm dist/bin/xd
+          GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/staging/xd .
+          cp LICENSE README.md dist/staging/
+          tar -czf "dist/archives/exodeck-${VER}-darwin-arm64.tar.gz" -C dist/staging xd LICENSE README.md
+          rm -rf dist/staging
 
-      - name: Create GitHub Release
+      - name: Upload Unix Archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-archives
+          path: dist/archives/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [build-windows, build-unix]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/release
+          merge-multiple: true
+
+      - name: Extract Tag Version
+        id: vars
+        run: |
+          VER="${{ github.event.inputs.tag }}"
+          if [ -z "$VER" ]; then
+            REF="${{ github.ref }}"
+            if [[ "$REF" == refs/tags/v* ]]; then
+              VER="${REF#refs/tags/}"
+            else
+              CLEAN_VER=$(grep -oP '(?<=var Version = ")[^"]+' version.go || echo "0.0.0")
+              VER="v${CLEAN_VER}"
+            fi
+          fi
+          CLEAN_VER="${VER#v}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "clean_version=$CLEAN_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Checksums
+        run: |
+          cd dist/release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v2
+        continue-on-error: true
+        with:
+          subject-path: 'dist/release/*'
+
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/archives/*
-          name: ExoDeck v${{ steps.vars.outputs.version }}
+          files: dist/release/*
+          tag_name: ${{ steps.vars.outputs.version }}
+          name: ExoDeck ${{ steps.vars.outputs.version }}
           generate_release_notes: true
           draft: false
           prerelease: false
