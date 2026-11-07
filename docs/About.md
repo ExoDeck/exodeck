@@ -60,6 +60,7 @@ You can modify `config.json` manually or via the Settings menu in the web interf
   > Sensitive credentials (passwords, usernames, URLs, notes, OTP secrets, and encrypted notes) are encrypted using Argon2id and AES-256-GCM.
   > When sharing a workspace folder or Git repo with a team, members only need to share the workspace's Master Password—no plaintext keys are stored in `config.json`.
   > Legacy Fernet keys can be migrated to Master Password vaults with one click.
+  > For full cryptographic details, see the [Password Vault & Encryption Guide](Password-Vault.md).
 - **`enable_git_sync`**: If set to `true`, ExoDeck will attempt to automatically commit and sync changes using Git for any workspace initialized as a Git repository.
 - **Font Sizes**: Adjust `font_size_ui`, `font_size_note`, and `font_size_links` to customize the typography scale across the app.
 
