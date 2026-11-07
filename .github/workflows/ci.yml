@@ -20,7 +20,7 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run ESLint
         run: npm run lint:js
@@ -47,7 +47,7 @@ jobs:
           version: latest
 
       - name: Install goversioninfo
-        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.1
 
       - name: Regenerate Windows resource files
         run: |
@@ -71,7 +71,7 @@ jobs:
           echo "resource_windows_*.syso regenerated for v$VERSION"
 
       - name: Run Go tests with coverage
-        run: go test -v -count=1 -coverprofile=coverage.out ./...
+        run: go test -v -count=1 -coverprofile=coverage.out ./internal/... .
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

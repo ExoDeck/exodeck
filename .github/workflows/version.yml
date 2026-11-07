@@ -12,7 +12,7 @@ on:
 jobs:
   bump:
     # Only run when CI passed and the triggering actor was not this workflow itself
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.actor != 'github-actions[bot]'
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed to push the version commit and tag

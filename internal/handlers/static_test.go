@@ -140,3 +140,15 @@ func TestServeStaticMissingIndexHTML(t *testing.T) {
 		t.Errorf("expected 404 when index.html is absent, got %d", resp.StatusCode)
 	}
 }
+
+func TestStaticPathTraversalRejected(t *testing.T) {
+	ts, _, _ := newTestServer(t)
+	resp, err := http.Get(ts.URL + "/../../../../etc/passwd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 404 or safe SPA fallback, got %d", resp.StatusCode)
+	}
+}

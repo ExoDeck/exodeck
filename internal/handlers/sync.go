@@ -19,7 +19,14 @@ type GitRunner interface {
 type RealGitRunner struct{}
 
 func (RealGitRunner) Run(ctx context.Context, cwd string, args ...string) (int, string, string) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return 1, "", "git executable not found: " + err.Error()
+	}
+	if absPath, absErr := filepath.Abs(gitPath); absErr == nil {
+		gitPath = absPath
+	}
+	cmd := exec.CommandContext(ctx, gitPath, args...)
 	cmd.Dir = cwd
 	if runtime.GOOS == "windows" {
 		cmd.SysProcAttr = hiddenWindowSysProcAttr()
@@ -27,7 +34,7 @@ func (RealGitRunner) Run(ctx context.Context, cwd string, args ...string) (int, 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
-	err := cmd.Run()
+	err = cmd.Run()
 	rc := 0
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
