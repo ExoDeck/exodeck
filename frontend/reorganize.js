@@ -9,8 +9,20 @@ import { renderPage } from './content.js';
 let isEditMode = false;
 export function isEditModeActive() { return isEditMode; }
 
-const GROUP_MIME = 'application/x-ExoDeck-group';
-const ITEM_MIME  = 'application/x-ExoDeck-item';
+const GROUP_MIME = 'application/x-exodeck-group';
+const ITEM_MIME  = 'application/x-exodeck-item';
+
+/**
+ * Checks whether the drag event contains the given MIME type (case-insensitively).
+ * @param {DataTransfer|null} dataTransfer
+ * @param {string} mime
+ * @returns {boolean}
+ */
+function hasMimeType(dataTransfer, mime) {
+  if (!dataTransfer?.types) return false;
+  const target = mime.toLowerCase();
+  return Array.from(dataTransfer.types).some(t => t.toLowerCase() === target);
+}
 
 /** Cleanup functions to remove event listeners added during edit mode. */
 const _cleanupFns = [];
@@ -80,6 +92,8 @@ function _attachGroupDragEvents() {
       card.classList.remove('group-card--dragging');
       document.querySelectorAll('.sidebar__page--drop-target')
         .forEach(el => el.classList.remove('sidebar__page--drop-target'));
+      document.querySelectorAll('.group-card--drop-target, .group-card--insert-before, .group-card--insert-after')
+        .forEach(el => el.classList.remove('group-card--drop-target', 'group-card--insert-before', 'group-card--insert-after'));
     };
 
     card.addEventListener('dragstart', onDragStart);
@@ -135,10 +149,8 @@ function calculateNewItemIndex(sourceGroup, targetGroup, sourceItem, targetItem,
 function _attachGroupReorderZones() {
   const cards = document.querySelectorAll('.group-card:not(.group-card--add)');
   for (const card of cards) {
-    let targetGroupIndex = Number(card.dataset.groupIndex);
-
     const onDragOver = e => {
-      if (!e.dataTransfer.types.includes(GROUP_MIME)) return;
+      if (!hasMimeType(e.dataTransfer, GROUP_MIME)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       
@@ -162,7 +174,7 @@ function _attachGroupReorderZones() {
     };
 
     const onDrop = async e => {
-      if (!e.dataTransfer.types.includes(GROUP_MIME)) return;
+      if (!hasMimeType(e.dataTransfer, GROUP_MIME)) return;
       e.preventDefault();
       e.stopPropagation();
       const isBefore = card.classList.contains('group-card--insert-before');
@@ -174,28 +186,34 @@ function _attachGroupReorderZones() {
       try { data = JSON.parse(raw); } catch { return; }
       
       if (data.sourceSlug !== state.currentSlug) return; // Only reorder on same page
+      const targetGroupIndex = Number(card.dataset.groupIndex);
       if (data.groupIndex === targetGroupIndex) return;
 
       const page = state.currentPage;
+      if (!page?.groups) return;
       
       let autoSwitched = false;
       const groupToMoveRef = page.groups[data.groupIndex];
       const targetGroupRef = page.groups[targetGroupIndex];
+      if (!groupToMoveRef || !targetGroupRef) return;
+
+      let actualGroupIndex = data.groupIndex;
+      let actualTargetIndex = targetGroupIndex;
 
       if (ensureCustomSort(page)) {
-        data.groupIndex = page.groups.indexOf(groupToMoveRef);
-        targetGroupIndex = page.groups.indexOf(targetGroupRef);
+        actualGroupIndex = page.groups.indexOf(groupToMoveRef);
+        actualTargetIndex = page.groups.indexOf(targetGroupRef);
         autoSwitched = true;
       }
 
-      if (data.groupIndex === targetGroupIndex) {
+      if (actualGroupIndex === actualTargetIndex) {
         if (autoSwitched) await savePageOrder();
         return;
       }
 
-      const newIndex = calculateNewGroupIndex(data.groupIndex, targetGroupIndex, isBefore);
+      const newIndex = calculateNewGroupIndex(actualGroupIndex, actualTargetIndex, isBefore);
 
-      const groupToMove = page.groups.splice(data.groupIndex, 1)[0];
+      const groupToMove = page.groups.splice(actualGroupIndex, 1)[0];
       page.groups.splice(newIndex, 0, groupToMove);
       await savePageOrder();
     };
@@ -236,7 +254,7 @@ function _attachSidebarDropZones() {
     ) continue;
 
     const onDragOver = e => {
-      if (!e.dataTransfer.types.includes(GROUP_MIME)) return;
+      if (!hasMimeType(e.dataTransfer, GROUP_MIME)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       btn.classList.add('sidebar__page--drop-target');
@@ -249,6 +267,7 @@ function _attachSidebarDropZones() {
     };
 
     const onDrop = async e => {
+      if (!hasMimeType(e.dataTransfer, GROUP_MIME)) return;
       e.preventDefault();
       btn.classList.remove('sidebar__page--drop-target');
       const raw = e.dataTransfer.getData(GROUP_MIME);
@@ -296,6 +315,8 @@ function _attachItemDragEvents() {
       li.classList.remove('item--dragging');
       document.querySelectorAll('.group-card__items--drop-target')
         .forEach(el => el.classList.remove('group-card__items--drop-target'));
+      document.querySelectorAll('.item--drop-target, .item--insert-before, .item--insert-after')
+        .forEach(el => el.classList.remove('item--drop-target', 'item--insert-before', 'item--insert-after'));
     };
 
     li.addEventListener('dragstart', onDragStart);
@@ -314,47 +335,54 @@ function _attachItemDragEvents() {
 // ---------------------------------------------------------------------------
 
 function _attachGroupDropZones() {
-  const lists = document.querySelectorAll('.group-card:not(.group-card--add) .group-card__items');
-  for (const list of lists) {
-    const card = list.closest('.group-card');
-    let targetGroupIndex = Number(card?.dataset.groupIndex);
+  const cards = document.querySelectorAll('.group-card:not(.group-card--add)');
+  for (const card of cards) {
+    const list = card.querySelector('.group-card__items');
 
     const onDragOver = e => {
-      if (!e.dataTransfer.types.includes(ITEM_MIME)) return;
+      if (!hasMimeType(e.dataTransfer, ITEM_MIME)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      list.classList.add('group-card__items--drop-target');
+      if (list) list.classList.add('group-card__items--drop-target');
     };
 
     const onDragLeave = e => {
-      if (!list.contains(e.relatedTarget)) {
-        list.classList.remove('group-card__items--drop-target');
+      if (!card.contains(e.relatedTarget)) {
+        if (list) list.classList.remove('group-card__items--drop-target');
       }
     };
 
     const onDrop = async e => {
+      if (!hasMimeType(e.dataTransfer, ITEM_MIME)) return;
       e.preventDefault();
-      list.classList.remove('group-card__items--drop-target');
+      if (list) list.classList.remove('group-card__items--drop-target');
       const raw = e.dataTransfer.getData(ITEM_MIME);
       if (!raw) return;
       let data;
       try { data = JSON.parse(raw); } catch { return; }
       const page = state.currentPage;
+      if (!page?.groups) return;
       
+      const targetGroupIndex = Number(card.dataset.groupIndex);
       const sourceGroupRef = page.groups[data.sourceGroupIndex];
-      const itemToMoveRef = sourceGroupRef.items[data.itemIndex];
+      const itemToMoveRef = sourceGroupRef?.items?.[data.itemIndex];
       const targetGroupRef = page.groups[targetGroupIndex];
-      
+      if (!sourceGroupRef || !targetGroupRef || !itemToMoveRef) return;
+
+      let actualSourceGroupIndex = data.sourceGroupIndex;
+      let actualTargetGroupIndex = targetGroupIndex;
+      let actualItemIndex = data.itemIndex;
+
       if (ensureCustomSort(page)) {
-        data.sourceGroupIndex = page.groups.indexOf(sourceGroupRef);
-        targetGroupIndex = page.groups.indexOf(targetGroupRef);
-        data.itemIndex = page.groups[data.sourceGroupIndex].items.indexOf(itemToMoveRef);
+        actualSourceGroupIndex = page.groups.indexOf(sourceGroupRef);
+        actualTargetGroupIndex = page.groups.indexOf(targetGroupRef);
+        actualItemIndex = page.groups[actualSourceGroupIndex].items.indexOf(itemToMoveRef);
       }
 
-      if (data.sourceGroupIndex === targetGroupIndex) {
+      if (actualSourceGroupIndex === actualTargetGroupIndex) {
         // Drop into empty space of the same group -> move to bottom
-        const itemToMove = page.groups[data.sourceGroupIndex].items.splice(data.itemIndex, 1)[0];
-        page.groups[targetGroupIndex].items.push(itemToMove);
+        const itemToMove = page.groups[actualSourceGroupIndex].items.splice(actualItemIndex, 1)[0];
+        page.groups[actualTargetGroupIndex].items.push(itemToMove);
         await savePageOrder();
         return;
       }
@@ -362,20 +390,20 @@ function _attachGroupDropZones() {
       // If we auto-switched and we are moving to a different group, we need to PUT the alphabetical state 
       // before POSTing the move, or we can just do the move in memory and PUT!
       // Doing in-memory splice for cross-group move is completely fine since we PUT the whole page anyway!
-      const itemToMove = page.groups[data.sourceGroupIndex].items.splice(data.itemIndex, 1)[0];
-      if (!page.groups[targetGroupIndex].items) page.groups[targetGroupIndex].items = [];
-      page.groups[targetGroupIndex].items.push(itemToMove);
+      const itemToMove = page.groups[actualSourceGroupIndex].items.splice(actualItemIndex, 1)[0];
+      if (!page.groups[actualTargetGroupIndex].items) page.groups[actualTargetGroupIndex].items = [];
+      page.groups[actualTargetGroupIndex].items.push(itemToMove);
       await savePageOrder();
     };
 
-    list.addEventListener('dragover',  onDragOver);
-    list.addEventListener('dragleave', onDragLeave);
-    list.addEventListener('drop',      onDrop);
+    card.addEventListener('dragover',  onDragOver);
+    card.addEventListener('dragleave', onDragLeave);
+    card.addEventListener('drop',      onDrop);
 
     _cleanupFns.push(() => {
-      list.removeEventListener('dragover',  onDragOver);
-      list.removeEventListener('dragleave', onDragLeave);
-      list.removeEventListener('drop',      onDrop);
+      card.removeEventListener('dragover',  onDragOver);
+      card.removeEventListener('dragleave', onDragLeave);
+      card.removeEventListener('drop',      onDrop);
     });
   }
 }
@@ -387,13 +415,10 @@ function _attachGroupDropZones() {
 function _attachItemReorderZones() {
   const items = document.querySelectorAll('.group-card__items .item[data-item-index]');
   for (const li of items) {
-    let targetGroupIndex = Number(li.dataset.groupIndex);
-    let targetItemIndex = Number(li.dataset.itemIndex);
-
     const onDragOver = e => {
-      if (!e.dataTransfer.types.includes(ITEM_MIME)) return;
+      if (!hasMimeType(e.dataTransfer, ITEM_MIME)) return;
       e.preventDefault();
-      e.stopPropagation(); // prevent bubbling to group list
+      e.stopPropagation(); // prevent bubbling to group list or card
       e.dataTransfer.dropEffect = 'move';
       
       const rect = li.getBoundingClientRect();
@@ -416,9 +441,9 @@ function _attachItemReorderZones() {
     };
 
     const onDrop = async e => {
-      if (!e.dataTransfer.types.includes(ITEM_MIME)) return;
+      if (!hasMimeType(e.dataTransfer, ITEM_MIME)) return;
       e.preventDefault();
-      e.stopPropagation(); // prevent bubbling to group list
+      e.stopPropagation(); // prevent bubbling to group list or card
       const isBefore = li.classList.contains('item--insert-before');
       li.classList.remove('item--drop-target', 'item--insert-before', 'item--insert-after');
       
@@ -428,30 +453,41 @@ function _attachItemReorderZones() {
       try { data = JSON.parse(raw); } catch { return; }
       
       const page = state.currentPage;
-      
-      let autoSwitched = false;
+      if (!page?.groups) return;
+
+      const targetGroupIndex = Number(li.dataset.groupIndex);
+      const targetItemIndex = Number(li.dataset.itemIndex);
+
       const sourceGroupRef = page.groups[data.sourceGroupIndex];
-      const itemToMoveRef = sourceGroupRef.items[data.itemIndex];
+      const itemToMoveRef = sourceGroupRef?.items?.[data.itemIndex];
       const targetGroupRef = page.groups[targetGroupIndex];
-      const targetItemRef = targetGroupRef.items[targetItemIndex];
+      const targetItemRef = targetGroupRef?.items?.[targetItemIndex];
+      if (!sourceGroupRef || !targetGroupRef || !itemToMoveRef || !targetItemRef) return;
+
+      let actualSourceGroupIndex = data.sourceGroupIndex;
+      let actualTargetGroupIndex = targetGroupIndex;
+      let actualSourceItemIndex = data.itemIndex;
+      let actualTargetItemIndex = targetItemIndex;
+      let autoSwitched = false;
 
       if (ensureCustomSort(page)) {
-        data.sourceGroupIndex = page.groups.indexOf(sourceGroupRef);
-        targetGroupIndex = page.groups.indexOf(targetGroupRef);
-        data.itemIndex = page.groups[data.sourceGroupIndex].items.indexOf(itemToMoveRef);
-        targetItemIndex = page.groups[targetGroupIndex].items.indexOf(targetItemRef);
+        actualSourceGroupIndex = page.groups.indexOf(sourceGroupRef);
+        actualTargetGroupIndex = page.groups.indexOf(targetGroupRef);
+        actualSourceItemIndex = page.groups[actualSourceGroupIndex].items.indexOf(itemToMoveRef);
+        actualTargetItemIndex = page.groups[actualTargetGroupIndex].items.indexOf(targetItemRef);
         autoSwitched = true;
       }
 
-      if (data.sourceGroupIndex === targetGroupIndex && data.itemIndex === targetItemIndex) {
+      if (actualSourceGroupIndex === actualTargetGroupIndex && actualSourceItemIndex === actualTargetItemIndex) {
         if (autoSwitched) await savePageOrder();
         return;
       }
 
-      const newIndex = calculateNewItemIndex(data.sourceGroupIndex, targetGroupIndex, data.itemIndex, targetItemIndex, isBefore);
+      const newIndex = calculateNewItemIndex(actualSourceGroupIndex, actualTargetGroupIndex, actualSourceItemIndex, actualTargetItemIndex, isBefore);
 
-      const itemToMove = page.groups[data.sourceGroupIndex].items.splice(data.itemIndex, 1)[0];
-      page.groups[targetGroupIndex].items.splice(newIndex, 0, itemToMove);
+      const itemToMove = page.groups[actualSourceGroupIndex].items.splice(actualSourceItemIndex, 1)[0];
+      if (!page.groups[actualTargetGroupIndex].items) page.groups[actualTargetGroupIndex].items = [];
+      page.groups[actualTargetGroupIndex].items.splice(newIndex, 0, itemToMove);
       await savePageOrder();
     };
 
@@ -521,14 +557,17 @@ async function _moveItemToGroup(sourceGroupIndex, itemIndex, targetGroupIndex) {
 
 async function savePageOrder() {
   try {
-      await apiFetch(
-        withLocation(`/pages/${encodeURIComponent(state.currentSlug)}`),
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state.currentPage),
-        }
-      );
+    const updated = await apiFetch(
+      withLocation(`/pages/${encodeURIComponent(state.currentSlug)}`),
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state.currentPage),
+      }
+    );
+    if (updated) {
+      state.currentPage = updated;
+    }
     renderPage(state.currentPage);
   } catch (err) {
     _showToast(`Save order failed: ${err.message}`);
