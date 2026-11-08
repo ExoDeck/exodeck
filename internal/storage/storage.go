@@ -26,8 +26,13 @@ const (
 	extExcalidraw   = ".excalidraw"
 	extBPMN         = ".bpmn"
 	msgCreatingDir  = "creating data dir: %v"
-	errDocsReadOnly = "docs workspace is read-only"
+	errDocsReadOnly = "ExoDeck workspace is read-only"
+	DocsWorkspace   = "ExoDeck"
 )
+
+func isHelpWorkspace(name string) bool {
+	return strings.EqualFold(name, "ExoDeck") || strings.EqualFold(name, "docs") || strings.EqualFold(name, "Help")
+}
 
 func isSupportedFile(relPath string) bool {
 	return strings.HasSuffix(relPath, extGrid) ||
@@ -170,14 +175,14 @@ func (s *Store) ResolveWorkspace(location string) (name string, path string, htt
 
 	if location == "" {
 		if len(s.workspaceOrd) == 0 {
-			return "", "", 500, "no workspaces configured"
+			return "ExoDeck", "docs", 0, ""
 		}
 		first := s.workspaceOrd[0]
 		return first, s.workspaces[first].Path, 0, ""
 	}
 
-	if location == "docs" {
-		return "docs", "docs", 0, ""
+	if isHelpWorkspace(location) {
+		return "ExoDeck", "docs", 0, ""
 	}
 
 	lc, ok := s.workspaces[location]
@@ -270,7 +275,7 @@ func (s *Store) InitCache() {
 	for name, lc := range s.workspaces {
 		s.loadWorkspaceLocked(name, lc.Path, currentFiles)
 	}
-	s.loadWorkspaceLocked("docs", "docs", currentFiles)
+	s.loadWorkspaceLocked("ExoDeck", "docs", currentFiles)
 
 	s.evictDeletedFilesLocked(currentFiles, "")
 	if len(s.taskIndex) == 0 && len(s.pageEntries) > 0 {
@@ -294,8 +299,8 @@ func (s *Store) ReloadCacheForWorkspace(workspaceName string) {
 	currentFiles := make(map[string]bool)
 	if ok {
 		s.loadWorkspaceLocked(workspaceName, lc.Path, currentFiles)
-	} else if workspaceName == "docs" {
-		s.loadWorkspaceLocked("docs", "docs", currentFiles)
+	} else if isHelpWorkspace(workspaceName) {
+		s.loadWorkspaceLocked("ExoDeck", "docs", currentFiles)
 	}
 
 	s.evictDeletedFilesLocked(currentFiles, workspaceName)
@@ -303,7 +308,7 @@ func (s *Store) ReloadCacheForWorkspace(workspaceName string) {
 }
 
 func (s *Store) shouldEvictEntryLocked(k CacheKey, entry PageEntry, currentFiles map[string]bool, workspaceName string) bool {
-	if workspaceName != "" && k.Location != workspaceName {
+	if workspaceName != "" && k.Location != workspaceName && (!isHelpWorkspace(workspaceName) || !isHelpWorkspace(k.Location)) {
 		return false
 	}
 	if strings.HasPrefix(filepath.Base(entry.RelPath), ".") || strings.HasPrefix(k.Slug, ".") || !isSupportedFile(entry.RelPath) {
@@ -315,7 +320,7 @@ func (s *Store) shouldEvictEntryLocked(k CacheKey, entry PageEntry, currentFiles
 	}
 
 	var path string
-	if k.Location != "docs" {
+	if !isHelpWorkspace(k.Location) {
 		if lc, ok := s.workspaces[k.Location]; ok {
 			path = lc.Path
 		}
@@ -441,7 +446,7 @@ func (s *Store) loadDiskWorkspaceLocked(path string, walkFn func(string, bool, e
 // loadWorkspaceLocked reads all pages from path into s.pages and s.pageEntries. Caller must hold s.mu write lock.
 func (s *Store) loadWorkspaceLocked(locName, path string, currentFiles map[string]bool) {
 	walkFn := s.makeWalkFn(locName, currentFiles)
-	if locName == "docs" {
+	if isHelpWorkspace(locName) {
 		s.loadDocsWorkspaceLocked(walkFn)
 	} else {
 		s.loadDiskWorkspaceLocked(path, walkFn)
@@ -625,7 +630,7 @@ func (s *Store) ReadPage(slug, location string) (models.Page, int, string) {
 
 	var data []byte
 	var err error
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		data, err = fs.ReadFile(s.docsFS, filepath.ToSlash(filepath.Join("docs", entry.RelPath)))
 	} else {
 		data, err = ReadFileWithRetry(filepath.Join(path, entry.RelPath))
@@ -649,7 +654,7 @@ func (s *Store) WritePage(slug string, page models.Page, location string) (int, 
 	if status != 0 {
 		return status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return 403, errDocsReadOnly
 	}
 
@@ -721,7 +726,7 @@ func (s *Store) DeletePage(slug, location string) (int, string) {
 	if status != 0 {
 		return status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return 403, errDocsReadOnly
 	}
 
@@ -762,7 +767,7 @@ func (s *Store) ReadNotePage(slug, location string) (string, int, string) {
 
 	var data []byte
 	var err error
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		data, err = fs.ReadFile(s.docsFS, "docs/"+entry.RelPath)
 	} else {
 		fullPath := filepath.Join(path, entry.RelPath)
@@ -868,7 +873,7 @@ func (s *Store) WriteNotePage(oldSlug, content, location string) (string, string
 	if status != 0 {
 		return "", "", status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return "", "", 403, errDocsReadOnly
 	}
 
@@ -939,7 +944,7 @@ func (s *Store) DeleteNotePage(slug, location string) (int, string) {
 	if status != 0 {
 		return status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return 403, errDocsReadOnly
 	}
 
@@ -994,7 +999,7 @@ func (s *Store) UpdateLinksAfterPageRename(oldSlug, newSlug, location string) er
 	if status != 0 {
 		return fmt.Errorf("%s", errMsg)
 	}
-	if workspaceName == "docs" {
+	if isHelpWorkspace(workspaceName) {
 		return errors.New(errDocsReadOnly)
 	}
 
@@ -1149,7 +1154,7 @@ func (s *Store) WriteWhiteboardPage(oldSlug, content, location string) (string, 
 	if status != 0 {
 		return "", "", status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return "", "", 403, errDocsReadOnly
 	}
 
@@ -1244,7 +1249,7 @@ func (s *Store) ReadWhiteboardPage(slug, location string) (string, int, string) 
 	var data []byte
 	var err error
 	var fullPath string
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		data, err = fs.ReadFile(s.docsFS, "docs/"+entry.RelPath)
 	} else {
 		fullPath = filepath.Join(path, entry.RelPath)
@@ -1278,7 +1283,7 @@ func (s *Store) DeleteWhiteboardPage(slug, location string) (int, string) {
 	if status != 0 {
 		return status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return 403, errDocsReadOnly
 	}
 
@@ -1309,7 +1314,7 @@ func (s *Store) WriteBpmnPage(oldSlug, content, location string) (string, string
 	if status != 0 {
 		return "", "", status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return "", "", 403, errDocsReadOnly
 	}
 
@@ -1398,7 +1403,7 @@ func (s *Store) ReadBpmnPage(slug, location string) (string, int, string) {
 	var data []byte
 	var err error
 	var fullPath string
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		data, err = fs.ReadFile(s.docsFS, "docs/"+entry.RelPath)
 	} else {
 		fullPath = filepath.Join(path, entry.RelPath)
@@ -1430,7 +1435,7 @@ func (s *Store) DeleteBpmnPage(slug, location string) (int, string) {
 	if status != 0 {
 		return status, errMsg
 	}
-	if name == "docs" {
+	if isHelpWorkspace(name) {
 		return 403, errDocsReadOnly
 	}
 

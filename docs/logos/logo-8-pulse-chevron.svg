@@ -1,9 +1,0 @@
-<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- ExoDeck Option 8: The Pulse Chevron (Double Launch Flight Deck) -->
-  <!-- Trailing Deck Chevron (Royal Indigo) -->
-  <path d="M34 26L72 64L34 102" stroke="#4F46E5" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Leading Cockpit Chevron (Electric Cyan) -->
-  <path d="M66 26L104 64L66 102" stroke="#00E5FF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Central Focus Node (Cyan Pulse) -->
-  <circle cx="50" cy="64" r="5" fill="#00E5FF"/>
-</svg>

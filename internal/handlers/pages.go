@@ -47,9 +47,11 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		pagesByLocation[name] = pages
 	}
 
-	// Add docs workspace pages
-	if docsPages, _, _ := s.Store.ListPages("docs"); docsPages != nil {
-		pagesByLocation["docs"] = docsPages
+	// Add ExoDeck docs workspace pages
+	if exoPages, _, _ := s.Store.ListPages("Help"); exoPages != nil {
+		pagesByLocation["ExoDeck"] = exoPages
+		pagesByLocation["docs"] = exoPages
+		pagesByLocation["Help"] = exoPages
 	}
 
 	vaultStatusByLocation := map[string]interface{}{}

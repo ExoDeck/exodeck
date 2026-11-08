@@ -1,5 +1,5 @@
 // sidebar.js — Sidebar component
-import { state, apiFetch, refreshPages, withLocation } from './app.js';
+import { state, apiFetch, refreshPages, withLocation, isHelpWorkspace, showStyledConfirmModal } from './app.js';
 import {
   parseApiError,
   handleTreeNavArrowDown,
@@ -659,7 +659,7 @@ function createPageButton(node, depth = 0, location = null, isFloating = false) 
   a.appendChild(icon);
 
   a.appendChild(label);
-  if (location !== 'docs') {
+  if (!isHelpWorkspace(location)) {
     a.appendChild(createPageActionMenu(node.slug, node.name, node.page_type, location));
   }
 
@@ -748,7 +748,7 @@ function renderGroupNode(node, container, depth, location, isFloating = false) {
     });
 
     summary.appendChild(link);
-    if (location !== 'docs') {
+    if (!isHelpWorkspace(location)) {
       summary.appendChild(createPageActionMenu(node.slug, node.name, node.page_type, location));
     }
   } else {
@@ -821,14 +821,20 @@ function getOrderedLocations(byLocation) {
     ...configOrder.filter(loc => byLocation.has(loc)),
     ...[...byLocation.keys()].filter(loc => !configOrder.includes(loc)),
   ];
-  if (order.includes('docs')) {
-    order = ['docs', ...order.filter(l => l !== 'docs')];
+  if (order.some(isHelpWorkspace)) {
+    const helpLoc = order.find(isHelpWorkspace);
+    order = [helpLoc, ...order.filter(l => !isHelpWorkspace(l))];
   }
   return order;
 }
 
+function hasNonDocsWorkspacesWithPages() {
+  const otherLocations = (state.locations ?? []).filter(l => !isHelpWorkspace(l));
+  return otherLocations.length > 0 && state.pages.some(p => otherLocations.includes(p.location) && !p.hidden);
+}
+
 export function getWorkspaceList() {
-  const visiblePages = state.pages.filter(p => !p.hidden && !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && (docsVisible || p.location !== 'docs'));
+  const visiblePages = state.pages.filter(p => !p.hidden && !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && (docsVisible || !isHelpWorkspace(p.location)));
   const pageLocations = [...new Set(visiblePages.map(p => p.location).filter(Boolean))];
   const configuredLocations = state.locations ?? [];
   const allLocations = [...new Set([...configuredLocations, ...pageLocations])];
@@ -928,7 +934,7 @@ export function renderFloatingNavWorkspaces() {
 
     const defaultIcon = document.createElement('span');
     defaultIcon.className = 'floating-nav__switcher-default-icon';
-    if (ws === 'docs') {
+    if (isHelpWorkspace(ws)) {
       defaultIcon.innerHTML = `<span class="material-symbols-outlined" style="font-size: 20px;" aria-hidden="true">help</span>`;
     } else {
       defaultIcon.innerHTML = defaultSvg;
@@ -1078,7 +1084,7 @@ function renderSinglePageList(nav, isFloating = false) {
   if (!nav) return;
   nav.innerHTML = '';
 
-  const visiblePages = state.pages.filter(p => !p.hidden && !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && (docsVisible || p.location !== 'docs'));
+  const visiblePages = state.pages.filter(p => !p.hidden && !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && (docsVisible || !isHelpWorkspace(p.location)));
   const pageLocations = [...new Set(visiblePages.map(p => p.location).filter(Boolean))];
   const configuredLocations = state.locations ?? [];
   const allLocations = [...new Set([...configuredLocations, ...pageLocations])];
@@ -1091,7 +1097,7 @@ function renderSinglePageList(nav, isFloating = false) {
 }
 
 export function renderPageList(targetNav = null, isFloating = false) {
-  const visiblePages = state.pages.filter(p => !p.hidden && !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && (docsVisible || p.location !== 'docs'));
+  const visiblePages = state.pages.filter(p => !p.hidden && !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && (docsVisible || !isHelpWorkspace(p.location)));
   const pageLocations = [...new Set(visiblePages.map(p => p.location).filter(Boolean))];
   const configuredLocations = state.locations ?? [];
   const allLocations = [...new Set([...configuredLocations, ...pageLocations])];
@@ -1211,7 +1217,10 @@ export async function loadPage(slug, location = null, historyOp = 'push') {
     const oldLocation = state.currentLocation;
     state.currentLocation = resolvedLocation;
 
-    if (oldLocation !== state.currentLocation) {
+    if (isHelpWorkspace(resolvedLocation) && !docsVisible) {
+      docsVisible = true;
+      renderPageList();
+    } else if (oldLocation !== state.currentLocation) {
       renderPageList();
     }
 
@@ -1250,16 +1259,32 @@ export async function loadPage(slug, location = null, historyOp = 'push') {
 // ---------------------------------------------------------------------------
 
 export function createNote(targetLocation = null) {
+  const effectiveLocation = (targetLocation && !isHelpWorkspace(targetLocation))
+    ? targetLocation
+    : ((state.currentLocation && !isHelpWorkspace(state.currentLocation))
+      ? state.currentLocation
+      : ((state.locations ?? []).find(l => !isHelpWorkspace(l)) ?? null));
+  if (!effectiveLocation) {
+    void showStyledConfirmModal(
+      'No Workspace Configured',
+      'Please configure a workspace in Configuration before creating pages.'
+    ).then((confirmed) => {
+      if (confirmed) {
+        void import('./config.js').then(m => m.openConfigModal()).catch(console.error);
+      }
+    });
+    return;
+  }
   updateSidebarVisibility('note');
   openInlineNoteEditor({
     rawMarkdown: '',
     slug: null,
     isNew: true,
-    location: targetLocation,
+    location: effectiveLocation,
     onSave: (newSlug) => {
       void (async () => {
-        const createdLocation = targetLocation ?? state.currentLocation;
-          await refreshPages();
+        const createdLocation = effectiveLocation;
+        await refreshPages();
 
         renderPageList();
         const match = state.pages.find(
@@ -1269,12 +1294,11 @@ export function createNote(targetLocation = null) {
       })();
     },
     onCancel: () => {
-      const effectiveLocation = targetLocation ?? state.currentLocation;
       if (state.currentPage && (state.currentPage.location ?? '') === (effectiveLocation ?? '')) {
         void loadPage(state.currentPage.slug, state.currentPage.location ?? null);
         return;
       }
-      const visiblePages = state.pages.filter(p => !p.hidden);
+      const visiblePages = state.pages.filter(p => !p.hidden && (docsVisible || !isHelpWorkspace(p.location)));
       const locPages = effectiveLocation
         ? visiblePages.filter(p => (p.location ?? '') === effectiveLocation)
         : visiblePages;
@@ -1296,6 +1320,22 @@ export function createNote(targetLocation = null) {
 // ---------------------------------------------------------------------------
 
 export function createGridPage(targetLocation = null) {
+  const effectiveLocation = (targetLocation && !isHelpWorkspace(targetLocation))
+    ? targetLocation
+    : ((state.currentLocation && !isHelpWorkspace(state.currentLocation))
+      ? state.currentLocation
+      : ((state.locations ?? []).find(l => !isHelpWorkspace(l)) ?? null));
+  if (!effectiveLocation) {
+    void showStyledConfirmModal(
+      'No Workspace Configured',
+      'Please configure a workspace in Configuration before creating pages.'
+    ).then((confirmed) => {
+      if (confirmed) {
+        void import('./config.js').then(m => m.openConfigModal()).catch(console.error);
+      }
+    });
+    return;
+  }
   updateSidebarVisibility('grid');
   const contentEl = document.getElementById('content');
   const titleEl = document.getElementById('pageTitle');
@@ -1352,12 +1392,11 @@ export function createGridPage(targetLocation = null) {
 
   const cancel = async () => {
     cleanup();
-    const effectiveLocation = targetLocation ?? state.currentLocation;
     if (state.currentPage && (state.currentPage.location ?? '') === (effectiveLocation ?? '')) {
       await loadPage(state.currentPage.slug, state.currentPage.location ?? null);
       return;
     }
-    const visiblePages = (state.pages ?? []).filter(p => !p.hidden);
+    const visiblePages = (state.pages ?? []).filter(p => !p.hidden && (docsVisible || !isHelpWorkspace(p.location)));
     const locPages = effectiveLocation
       ? visiblePages.filter(p => (p.location ?? '') === effectiveLocation)
       : visiblePages;
@@ -1382,7 +1421,6 @@ export function createGridPage(targetLocation = null) {
     titleEl?.classList.remove('content__title--error');
 
     const newSlug = slugify(name);
-    const effectiveLocation = targetLocation ?? state.currentLocation;
     const duplicate = (state.pages ?? []).some(p => {
       const s = p.slug ?? slugify(p.page_name ?? p['page-name'] ?? '');
       return s === newSlug && (p.location ?? '') === (effectiveLocation ?? '');
@@ -1397,7 +1435,7 @@ export function createGridPage(targetLocation = null) {
     saveBtn.disabled = true;
 
     try {
-        await apiFetch(withLocation('/pages', targetLocation), {
+        await apiFetch(withLocation('/pages', effectiveLocation), {
           method: 'POST',
           body: JSON.stringify(newPagePayload),
         });
@@ -2124,7 +2162,9 @@ export function toggleSidebar() {
 
 export function initSidebar() {
   const sidebar = document.getElementById('sidebar');
-  docsVisible = (state.locations.length === 0);
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  const isDocsUrl = isHelpWorkspace(segments[0]);
+  docsVisible = isDocsUrl || !hasNonDocsWorkspacesWithPages();
 
   // Initialize pin state and views
   setSidebarPinned(isSidebarPinned, false);
@@ -2262,7 +2302,9 @@ export function initSidebar() {
 
       if (!isOpen) {
         hamburgerMenuPanel.innerHTML = '';
-        const loc = state.currentLocation;
+        const loc = (state.currentLocation && !isHelpWorkspace(state.currentLocation))
+          ? state.currentLocation
+          : ((state.locations ?? []).find(l => !isHelpWorkspace(l)) ?? null);
 
         const addGridBtn = document.createElement('button');
         addGridBtn.className = 'add-page-menu__item';
@@ -2292,6 +2334,17 @@ export function initSidebar() {
         const sep1 = document.createElement('hr');
         sep1.className = 'add-page-menu__separator';
         hamburgerMenuPanel.appendChild(sep1);
+
+        const navigatorBtn = document.createElement('button');
+        navigatorBtn.className = 'add-page-menu__item';
+        navigatorBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">view_list</span> <span>Navigator</span> <span class="menu-shortcut">.</span>`;
+        navigatorBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeHamburgerMenu();
+          toggleFloatingNavigator();
+        };
+        hamburgerMenuPanel.appendChild(navigatorBtn);
 
         const switchWsBtn = document.createElement('button');
         switchWsBtn.className = 'add-page-menu__item';
@@ -2339,7 +2392,7 @@ export function initSidebar() {
           closeHamburgerMenu();
           if (docsVisible) {
             const allLocations = getWorkspaceList();
-            const availableWorkspaces = allLocations.filter(w => w !== 'docs');
+            const availableWorkspaces = allLocations.filter(w => !isHelpWorkspace(w) && state.pages.some(p => p.location === w && !p.hidden));
             if (availableWorkspaces.length > 0) {
               docsVisible = false;
               renderPageList();
@@ -2350,8 +2403,8 @@ export function initSidebar() {
           } else {
             docsVisible = true;
             renderPageList();
-            const firstDocsPage = state.pages.find(p => p.location === 'docs' && !p.hidden);
-            if (firstDocsPage) void loadPage(firstDocsPage.slug, 'docs');
+            const firstDocsPage = state.pages.find(p => isHelpWorkspace(p.location) && !p.hidden);
+            if (firstDocsPage) void loadPage(firstDocsPage.slug, firstDocsPage.location ?? 'ExoDeck');
           }
         };
         hamburgerMenuPanel.appendChild(helpBtn);
@@ -2422,7 +2475,7 @@ export function initSidebar() {
 
   const hasRouteInUrl = window.location.pathname.split('/').some(Boolean);
   if (!hasRouteInUrl) {
-    const first = state.pages.find(p => !p.hidden);
+    const first = state.pages.find(p => !p.hidden && (docsVisible || !isHelpWorkspace(p.location)));
     if (first) void loadPage(first.slug, first.location ?? null);
   }
 
@@ -2433,7 +2486,7 @@ export function initSidebar() {
       document.querySelectorAll('.add-page-menu--open').forEach(el => el.classList.remove('add-page-menu--open'));
     }
     if (isFloatingNavOpen) {
-      if (!e.target.closest('#floatingNavPanel') && !e.target.closest('#workspaceHeader') && !e.target.closest('#sidebarUnpinnedStrip') && !e.target.closest('#sidebarOpenBtn')) {
+      if (!e.target.closest('#floatingNavPanel') && !e.target.closest('#workspaceHeader') && !e.target.closest('#sidebarUnpinnedStrip') && !e.target.closest('#sidebarOpenBtn') && !e.target.closest('#hamburgerMenuPanel') && !e.target.closest('#hamburgerBtn')) {
         closeFloatingNavigator();
       }
     }
@@ -2468,12 +2521,15 @@ export function initSidebar() {
   });
 
   document.addEventListener('exodeck:pages-changed', () => {
+    if (!hasNonDocsWorkspacesWithPages()) {
+      docsVisible = true;
+    }
     renderPageList();
   });
 
   document.addEventListener('exodeck:api-mutation', () => {
     const orderedLocations = getOrderedLocations(groupPagesByLocation(
-      state.pages.filter(p => !p.hidden && (docsVisible || p.location !== 'docs')),
+      state.pages.filter(p => !p.hidden && (docsVisible || !isHelpWorkspace(p.location))),
       [...new Set([...(state.locations ?? []), ...state.pages.map(p => p.location).filter(Boolean)])]
     ));
     fetchAndApplySyncStatus(orderedLocations);

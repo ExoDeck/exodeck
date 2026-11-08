@@ -24,8 +24,8 @@ func TestDefaultsHaveExpectedValues(t *testing.T) {
 	if d.EnableGitSync {
 		t.Error("default enable_git_sync should be false")
 	}
-	if d.Workspaces == nil {
-		t.Error("default workspaces should not be nil")
+	if ws, ok := d.Workspaces.([]interface{}); !ok || len(ws) != 0 {
+		t.Errorf("default workspaces should be empty slice, got %+v", d.Workspaces)
 	}
 }
 

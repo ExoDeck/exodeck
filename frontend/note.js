@@ -1,5 +1,5 @@
 // note.js — note renderer and editor
-import { state, refreshPages, withLocation, apiFetch } from './app.js';
+import { state, refreshPages, withLocation, apiFetch, isHelpWorkspace } from './app.js';
 import { renderMarkdownToElement, loadMarkdownDependencies } from './markdown-utils.js';
 import { showImageManagerModal } from './media-modal.js';
 import { showErrorBubble, parseApiError } from './ui-utils.js';
@@ -145,7 +145,7 @@ export function renderNoteContent(page) {
     outlineBtn.classList.toggle('active', isPinned());
 
 
-    if (state.currentLocation !== 'docs') {
+    if (!isHelpWorkspace(state.currentLocation)) {
       const menuBtn = createPageActionMenu(state.currentSlug, page['page-name'], 'note', state.currentLocation, true);
       actionsEl.appendChild(editBtn);
       actionsEl.appendChild(outlineBtn);
@@ -521,7 +521,7 @@ function setupEditorActions(actionsEl, slug, location, isNew, extractedTitle, te
     actionsEl.appendChild(uploadBtn);
   }
 
-  if (!isNew && location !== 'docs') {
+  if (!isNew && !isHelpWorkspace(location)) {
     const menuBtn = createPageActionMenu(slug, extractedTitle, 'note', location, true);
     actionsEl.appendChild(menuBtn);
   }

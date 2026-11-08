@@ -1,5 +1,5 @@
 // workspace-nav.js — Workspace navigation overlay
-import { state } from './app.js';
+import { state, isHelpWorkspace } from './app.js';
 import { loadPage, renderPageList, getWorkspaceList, closeFloatingNavigator } from './sidebar.js';
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,11 @@ function createResultItem(workspaceName, index) {
   img.style.display = 'none';
 
   const defaultIcon = document.createElement('span');
-  defaultIcon.innerHTML = defaultSvg;
+  if (isHelpWorkspace(workspaceName)) {
+    defaultIcon.innerHTML = `<span class="material-symbols-outlined" style="font-size: 20px;" aria-hidden="true">help</span>`;
+  } else {
+    defaultIcon.innerHTML = defaultSvg;
+  }
   defaultIcon.style.display = 'block';
 
   img.onload = () => {

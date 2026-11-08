@@ -15,6 +15,18 @@ import { initNotifications, updateNotificationBadge, updateAllTasks } from './no
 import { parseApiError, showBackendDisconnectedModal, hideBackendDisconnectedModal } from './ui-utils.js';
 
 export { parseApiError, showBackendDisconnectedModal, hideBackendDisconnectedModal };
+
+/**
+ * Checks whether a location / workspace identifier represents the built-in Help workspace.
+ * @param {string|null|undefined} location
+ * @returns {boolean}
+ */
+export function isHelpWorkspace(location) {
+  if (!location) return false;
+  return location === 'ExoDeck' || location === 'Help' || location === 'docs';
+}
+
+export const isHelpLocation = isHelpWorkspace;
 export const API_BASE = '/api/v1';
 
 // ---------------------------------------------------------------------------
@@ -175,7 +187,8 @@ export async function refreshPages() {
   if (data.all_tasks) {
     updateAllTasks(data.all_tasks);
   }
-  state.pages = [...data.locations, 'docs'].flatMap(name =>
+  const helpKey = data.pages?.['ExoDeck'] ? 'ExoDeck' : (Object.keys(data.pages ?? {}).find(isHelpWorkspace) ?? 'ExoDeck');
+  state.pages = [...data.locations, helpKey].flatMap(name =>
     (data.pages[name] ?? [])
       .filter(p => !p.slug?.startsWith('.') && !p.page_name?.startsWith('.') && !p.file_name?.startsWith('.'))
       .map(p => ({ ...p, location: p.location ?? name }))

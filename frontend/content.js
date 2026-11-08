@@ -1,5 +1,5 @@
 // content.js — Main content area
-import { state, apiFetch, withLocation, refreshPages } from './app.js';
+import { state, apiFetch, withLocation, refreshPages, isHelpWorkspace } from './app.js';
 import { renderGroup } from './groupbox.js';
 import { renderNoteContent } from './note.js';
 import { renderWhiteboardPage, unmountWhiteboard } from './whiteboard.js';
@@ -357,7 +357,7 @@ function setupPageActions(page) {
       : '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
   });
 
-  if (state.currentLocation !== 'docs') {
+  if (!isHelpWorkspace(state.currentLocation)) {
     const sortBtn = createSortButton(state.currentPage);
     const menuBtn = createPageActionMenu(state.currentSlug, page['page-name'], undefined, state.currentLocation, true);
     actionsEl.appendChild(editBtn);
@@ -441,7 +441,7 @@ function renderPageGrid(page) {
 
   renderGroupCards(grid, page.groups ?? []);
 
-  if (state.currentLocation !== 'docs') {
+  if (!isHelpWorkspace(state.currentLocation)) {
     grid.appendChild(createAddGroupCard());
   }
 

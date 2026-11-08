@@ -55,7 +55,7 @@ func (s *Server) syncStatusForLocation(ctx context.Context, location string, run
 	if httpStatus != 0 {
 		return nil, httpStatus, errMsg
 	}
-	if name == "docs" {
+	if name == "ExoDeck" || name == "docs" || name == "Help" {
 		return map[string]interface{}{"enabled": false}, 0, ""
 	}
 
@@ -132,8 +132,8 @@ func (s *Server) syncData(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, httpStatus, errMsg)
 		return
 	}
-	if workspaceName == "docs" {
-		jsonError(w, 403, "Git sync is disabled for docs workspace")
+	if workspaceName == "ExoDeck" || workspaceName == "docs" || workspaceName == "Help" {
+		jsonError(w, 403, "Git sync is disabled for ExoDeck workspace")
 		return
 	}
 
