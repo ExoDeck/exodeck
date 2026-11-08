@@ -38,6 +38,10 @@
 
 - Don't use cat or grep to read files, use internal tool instead so I don't have to give permissions on every file access in the workspace
 
+## Agent workflow
+
+- When the task is done, do **NOT** commit to git, let the user review it first
+
 ## Coding Conventions
 
 ### Go (backend)

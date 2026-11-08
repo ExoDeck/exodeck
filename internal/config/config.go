@@ -21,7 +21,13 @@ func Defaults() models.ConfigModel {
 		FontSizeNote:     16,
 		FontSizeLinks:    14,
 		Port:             8000,
-		Workspaces:       nil,
+		Workspaces: []interface{}{
+			map[string]interface{}{
+				"name":   "Default",
+				"path":   "./data",
+				"hidden": false,
+			},
+		},
 		EnableGitSync:    false,
 		LogLevel:         "info",
 		LogFile:          "",

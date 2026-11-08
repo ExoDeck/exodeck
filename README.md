@@ -36,15 +36,27 @@ Built with a lightweight Go backend and pure vanilla JavaScript/CSS in the front
 
 ## Quick Start
 
-### 1. Install via Windows Package Manager (`winget`)
+### 1. Install via Script
 
-The easiest way to install and update ExoDeck on Windows:
+#### Linux & macOS
 
-```powershell
-winget install ExoDeck.ExoDeck
+Install or update ExoDeck with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ExoDeck/exodeck/main/scripts/install.sh | bash
 ```
 
 Once installed, simply run `xd` from any terminal.
+
+#### Windows (PowerShell — No Admin Required)
+
+Install or update ExoDeck to your user profile:
+
+```powershell
+irm https://raw.githubusercontent.com/ExoDeck/exodeck/main/scripts/install.ps1 | iex
+```
+
+The script automatically unblocks `xd.exe` to prevent Windows SmartScreen unrecognized app warnings and adds `xd` to your user `PATH`.
 
 ### 2. Pre-built Binaries (Direct Download)
 
@@ -64,9 +76,9 @@ Open your browser to [http://localhost:8000](http://localhost:8000).
 
 > [!NOTE]
 > **Windows SmartScreen on First Run**:  
-> As a new open-source project without a commercial code-signing certificate, Windows Defender SmartScreen may display an *"Unrecognized app"* warning when launching `xd.exe` downloaded via a browser.
+> If downloading `xd.exe` directly via a web browser without the installer script, Windows Defender SmartScreen may display an *"Unrecognized app"* warning because the binary is not yet signed with a commercial certificate.
 > Click **"More info"** &rarr; **"Run anyway"** (or right-click `xd.exe` &rarr; **Properties** &rarr; check **"Unblock"**).
-> Installing via `winget install ExoDeck.ExoDeck` avoids this prompt. All release binaries are built with open provenance on GitHub Actions.
+> Running the PowerShell installer script (`install.ps1`) unblocks the binary automatically. All release binaries are built with open provenance on GitHub Actions.
 
 ### 3. Run from Source
 
@@ -89,12 +101,14 @@ go build -o xd .
 
 ## Configuration (`config.json`)
 
-On first run, ExoDeck automatically generates a default `config.json` next to the executable if one does not exist.
+On first run, ExoDeck automatically creates its working directory and configuration in `~/.exodeck` (`$HOME/.exodeck` on Linux/macOS, `%USERPROFILE%\.exodeck` on Windows) with a ready-to-use default workspace located at `~/.exodeck/data`.
 
-You can specify a custom directory for `config.json` and data via the `--config-location` or `-cl` command-line flag:
+The binary `xd` can be placed anywhere on your system (e.g., `/usr/local/bin`, `~/.local/bin`, or `C:\Program Files\ExoDeck`).
+
+You can specify a custom directory for `config.json`, cache, and data via the `--config-location` or `-cl` command-line flag:
 
 ```bash
-./xd -cl /path/to/my/workspace
+xd -cl /path/to/my/workspace
 ```
 
 A sample configuration ([`config.json.example`](config.json.example)):
