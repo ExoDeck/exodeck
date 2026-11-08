@@ -22,23 +22,39 @@ import (
 	"github.com/ExoDeck/exodeck/internal/storage"
 )
 
+// ResolveConfigDir determines the working directory for configuration, data, and cache.
+// If explicit is non-empty (e.g. from -cl / --config-location), it is cleaned and returned.
+// Otherwise, it returns ~/.exodeck ($HOME/.exodeck on Unix/macOS, %USERPROFILE%\.exodeck on Windows).
+func ResolveConfigDir(explicit string) (string, error) {
+	if explicit != "" {
+		return filepath.Clean(explicit), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("determining user home directory: %w", err)
+	}
+	return filepath.Join(home, ".exodeck"), nil
+}
+
 func main() {
 	var configLocation string
-	flag.StringVar(&configLocation, "cl", "", "Directory for config.json and data/ (defaults to executable directory)")
-	flag.StringVar(&configLocation, "config-location", "", "Directory for config.json and data/ (defaults to executable directory)")
+	flag.StringVar(&configLocation, "cl", "", "Directory for config.json, cache, and data/ (defaults to ~/.exodeck or $HOME/.exodeck)")
+	flag.StringVar(&configLocation, "config-location", "", "Directory for config.json, cache, and data/ (defaults to ~/.exodeck or $HOME/.exodeck)")
 	flag.Parse()
 
-	// Determine config directory
-	if configLocation == "" {
-		exe, err := os.Executable()
-		if err != nil {
-			log.Fatalf("could not determine executable path: %v", err)
-		}
-		resolved, err := filepath.EvalSymlinks(exe)
-		if err != nil {
-			resolved = exe
-		}
-		configLocation = filepath.Dir(resolved)
+	var err error
+	configLocation, err = ResolveConfigDir(configLocation)
+	if err != nil {
+		log.Fatalf("could not determine configuration directory: %v", err)
+	}
+
+	if err := os.MkdirAll(configLocation, 0755); err != nil {
+		log.Fatalf("creating configuration directory: %v", err)
+	}
+
+	defaultDataDir := filepath.Join(configLocation, "data")
+	if err := os.MkdirAll(defaultDataDir, 0755); err != nil {
+		log.Fatalf("creating default data directory: %v", err)
 	}
 
 	// First-run: create config.json if absent
@@ -53,7 +69,7 @@ func main() {
 	}
 
 	// Setup logging
-	logFile := setupLogger(cfg)
+	logFile := setupLogger(cfg, configLocation)
 	if logFile != nil {
 		defer func() {
 			_ = logFile.Close()
@@ -61,10 +77,13 @@ func main() {
 	}
 
 	// Initialise storage
-	defaultDataDir := filepath.Join(configLocation, "data")
 	locs, order, err := storage.ParseWorkspaces(cfg.Workspaces, defaultDataDir, configLocation)
 	if err != nil {
 		log.Fatalf("parsing workspaces: %v", err)
+	}
+	if len(order) == 0 {
+		locs["Default"] = storage.WorkspaceConfig{Path: defaultDataDir}
+		order = append(order, "Default")
 	}
 
 	store := storage.New(DocsFS, configLocation)
@@ -126,7 +145,7 @@ func printBanner(version string) {
 	fmt.Printf("  version %s\n\n", version)
 }
 
-func setupLogger(cfg models.ConfigModel) *os.File {
+func setupLogger(cfg models.ConfigModel, configDir string) *os.File {
 	var level slog.Level
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug":
@@ -150,9 +169,16 @@ func setupLogger(cfg models.ConfigModel) *os.File {
 	var writer io.Writer = os.Stdout
 
 	if cfg.LogFile != "" {
-		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		logPath := cfg.LogFile
+		if !filepath.IsAbs(logPath) {
+			logPath = filepath.Join(configDir, logPath)
+		}
+		if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+			log.Fatalf("error creating log directory: %v", err)
+		}
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Fatalf("error opening log file %s: %v", cfg.LogFile, err)
+			log.Fatalf("error opening log file %s: %v", logPath, err)
 		}
 		logFile = f
 		writer = io.MultiWriter(os.Stdout, f)

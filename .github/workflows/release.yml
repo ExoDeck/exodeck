@@ -240,19 +240,3 @@ jobs:
           draft: false
           prerelease: false
 
-  winget:
-    name: Publish to WinGet
-    needs: [publish]
-    runs-on: windows-latest
-    steps:
-      - name: Publish to WinGet Community Repository
-        uses: vedantmgoyal9/winget-releaser@v2
-        if: env.WINGET_TOKEN != ''
-        env:
-          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        with:
-          identifier: ExoDeck.ExoDeck
-          token: ${{ secrets.WINGET_TOKEN }}
-          installers-regex: 'windows-(amd64|arm64)\.zip$'
-          release-tag: ${{ github.event.inputs.tag || github.ref_name }}
-          max-versions-to-keep: '5'

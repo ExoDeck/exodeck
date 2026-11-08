@@ -6,6 +6,20 @@ ExoDeck is a personal browser start page and a lightweight Personal Knowledge Ma
 
 ExoDeck is built with Go, meaning it compiles to a single, lightweight executable binary with no external runtime dependencies.
 
+**To install via script:**
+
+- **Linux & macOS:**
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/ExoDeck/exodeck/main/scripts/install.sh | bash
+  ```
+
+- **Windows (PowerShell — No Admin Required):**
+
+  ```powershell
+  irm https://raw.githubusercontent.com/ExoDeck/exodeck/main/scripts/install.ps1 | iex
+  ```
+
 **To build from source:**
 
 1. Ensure you have Go 1.25+ installed on your system.
@@ -29,7 +43,8 @@ ExoDeck is built with Go, meaning it compiles to a single, lightweight executabl
 
 When you launch ExoDeck for the very first time, it does the following automatically:
 
-- Creates a default `config.json` file in the same directory as the executable.
+- Creates its working directory and default `config.json` in `~/.exodeck` (`$HOME/.exodeck` on Linux/macOS, `%USERPROFILE%\.exodeck` on Windows).
+- Initializes a default workspace folder at `~/.exodeck/data`.
 - Boots up a local web server (by default on port `8000`).
 - Opens with the built-in, readonly **Docs** workspace displayed so you can read this documentation.
 
@@ -38,11 +53,12 @@ To access the app, simply open your web browser and navigate to:
 
 ## Configuration (`config.json`)
 
-All settings for ExoDeck are stored in `config.json`. By default, this file lives right next to your executable.
-If you want to specify a custom directory for your config, you can launch the app with the `--config-location` or `-cl` flag:
+All settings for ExoDeck are stored in `config.json`. By default, this file lives in `~/.exodeck/config.json`.
+The binary `xd` can be installed anywhere, including system folders (`/usr/local/bin`, `C:\Program Files\ExoDeck`, etc.).
+If you want to specify a custom directory for your config, cache, and workspaces, launch the app with the `--config-location` or `-cl` flag:
 
 ```bash
-./xd --config-location /path/to/my/data
+xd --config-location /path/to/my/data
 ```
 
 ### Important Settings
@@ -54,8 +70,6 @@ You can modify `config.json` manually or via the Settings menu in the web interf
 - **`log_level`**: Controls the verbosity of application logs. Valid options are `"debug"`, `"info"`, `"warn"`, and `"error"` (default: `"info"`).
 - **`log_file`**: Specify a file path to log output to a file instead of, or in addition to, the console. If omitted or empty, logs will only print to the console.
 - **`workspaces`**: An array of directories where your page data (JSON and Markdown files) is stored.
-  **Important: You must first create a workspace in the Configuration before you can create pages.**
-  **Click the gear wheel (⚙) -> Workspaces -> + Add Workspace.**
   > **Master Password Vault:** Workspaces can be protected with a KeePass-style Master Password.
   > Sensitive credentials (passwords, usernames, URLs, notes, OTP secrets, and encrypted notes) are encrypted using Argon2id and AES-256-GCM.
   > When sharing a workspace folder or Git repo with a team, members only need to share the workspace's Master Password—no plaintext keys are stored in `config.json`.

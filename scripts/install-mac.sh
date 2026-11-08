@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# ExoDeck macOS installer shortcut
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "${SCRIPT_DIR}/install.sh" "$@"

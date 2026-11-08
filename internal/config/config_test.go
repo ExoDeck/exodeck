@@ -24,6 +24,9 @@ func TestDefaultsHaveExpectedValues(t *testing.T) {
 	if d.EnableGitSync {
 		t.Error("default enable_git_sync should be false")
 	}
+	if d.Workspaces == nil {
+		t.Error("default workspaces should not be nil")
+	}
 }
 
 func TestLoadReturnsDefaultsWhenNoFile(t *testing.T) {
