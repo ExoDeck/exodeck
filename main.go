@@ -81,10 +81,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("parsing workspaces: %v", err)
 	}
-	if len(order) == 0 {
-		locs["Default"] = storage.WorkspaceConfig{Path: defaultDataDir}
-		order = append(order, "Default")
-	}
 
 	store := storage.New(DocsFS, configLocation)
 	store.SetWorkspaces(locs, order)

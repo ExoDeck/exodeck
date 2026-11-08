@@ -211,8 +211,14 @@ func TestSyncEdgeCases(t *testing.T) {
 	ts := httptest.NewServer(handlers.NewRouter(srv))
 	defer ts.Close()
 
-	// 1. Docs workspace returns 403
-	resp, _ := http.Post(ts.URL+"/api/v1/sync?location=docs", "application/json", nil)
+	// 1. Help & docs workspace return 403
+	resp, _ := http.Post(ts.URL+"/api/v1/sync?location=Help", "application/json", nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403 for Help sync, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	resp, _ = http.Post(ts.URL+"/api/v1/sync?location=docs", "application/json", nil)
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("expected 403 for docs sync, got %d", resp.StatusCode)
 	}

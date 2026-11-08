@@ -1,5 +1,5 @@
 // bpmn.js — Business Process page type using bpmn-js (lazy-loaded from CDN)
-import { state, withLocation, refreshPages } from './app.js';
+import { state, withLocation, refreshPages, isHelpWorkspace, showStyledConfirmModal } from './app.js';
 import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility } from './sidebar.js';
 import { showErrorBubble, parseApiError, createEditorActionButtons, handleTabNavigation, navigateAfterPageCancel, validateNewPageTitle } from './ui-utils.js';
 import { openConfirmModal } from './modal.js';
@@ -305,7 +305,7 @@ async function renderBpmnView(page, slug, location, cachedDeps = null) {
     editBtn.addEventListener('click', () => { void enterEditMode(page, slug, location, deps); });
     actionsEl.appendChild(editBtn);
 
-    if (location !== 'docs') {
+    if (!isHelpWorkspace(location)) {
       const menuBtn = createPageActionMenu(slug, page['page-name'], 'bpmn', location, true);
       actionsEl.appendChild(menuBtn);
     }
@@ -496,7 +496,7 @@ async function enterEditMode(page, slug, location, deps) {
     actionsEl.appendChild(saveBtn);
     actionsEl.appendChild(cancelBtn);
 
-    if (location !== 'docs') {
+    if (!isHelpWorkspace(location)) {
       const menuBtn = createPageActionMenu(slug, originalPage['page-name'], 'bpmn', location, true);
       actionsEl.appendChild(menuBtn);
     }
@@ -521,6 +521,22 @@ export async function renderBpmnPage(page, slug, location) {
 // ---------------------------------------------------------------------------
 
 export function createBpmnPage(targetLocation = null) {
+  const effectiveLocation = (targetLocation && !isHelpWorkspace(targetLocation))
+    ? targetLocation
+    : ((state.currentLocation && !isHelpWorkspace(state.currentLocation))
+      ? state.currentLocation
+      : ((state.locations ?? []).find(l => !isHelpWorkspace(l)) ?? null));
+  if (!effectiveLocation) {
+    void showStyledConfirmModal(
+      'No Workspace Configured',
+      'Please configure a workspace in Configuration before creating pages.'
+    ).then((confirmed) => {
+      if (confirmed) {
+        void import('./config.js').then(m => m.openConfigModal()).catch(console.error);
+      }
+    });
+    return;
+  }
   updateSidebarVisibility('bpmn');
   const contentEl = document.getElementById('content');
   const titleEl   = document.getElementById('pageTitle');
@@ -601,9 +617,8 @@ export function createBpmnPage(targetLocation = null) {
   };
 
   const save = async () => {
-    const { valid, title: newName, slug: newSlug } = validateNewPageTitle(titleEl, targetLocation, state, slugify);
+    const { valid, title: newName, slug: newSlug } = validateNewPageTitle(titleEl, effectiveLocation, state, slugify);
     if (!valid) return;
-    const effectiveLocation = targetLocation ?? state.currentLocation;
 
     if (!activeInstance) {
       showErrorBubble(titleEl, 'BPMN editor is still loading.');
@@ -626,7 +641,7 @@ export function createBpmnPage(targetLocation = null) {
 
     saveBtn.disabled = true;
     try {
-      const path = withLocation('/bpmn', targetLocation);
+      const path = withLocation('/bpmn', effectiveLocation);
       const res = await fetch(`/api/v1${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

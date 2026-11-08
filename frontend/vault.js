@@ -1,5 +1,5 @@
 // vault.js — Master Password Vault management & UI
-import { apiFetch, withLocation, state } from './app.js';
+import { apiFetch, withLocation, state, isHelpWorkspace } from './app.js';
 import { renderPage } from './content.js';
 import { parseApiError } from './ui-utils.js';
 
@@ -30,7 +30,7 @@ export function hasFernetKey(locationName) {
  */
 export function canEncryptWorkspace(location = null) {
   const ws = location || state.currentLocation || '';
-  if (!ws || ws === 'docs') return false;
+  if (!ws || isHelpWorkspace(ws)) return false;
   const status = state.vaultStatus?.[ws];
   if (status?.configured || status?.has_legacy_key) return true;
   return hasFernetKey(ws);
@@ -43,7 +43,7 @@ export function canEncryptWorkspace(location = null) {
  */
 export async function fetchVaultStatus(location = null) {
   const ws = location || state.currentLocation || '';
-  if (!ws || ws === 'docs') {
+  if (!ws || isHelpWorkspace(ws)) {
     return { configured: false, unlocked: false, has_legacy_key: false, expires_in_seconds: 0 };
   }
   try {
@@ -67,7 +67,7 @@ export async function fetchVaultStatus(location = null) {
  */
 export async function ensureVaultUnlocked(location = null) {
   const ws = location || state.currentLocation || '';
-  if (!ws || ws === 'docs') return true;
+  if (!ws || isHelpWorkspace(ws)) return true;
   const status = await fetchVaultStatus(ws);
   if (status.configured && !status.unlocked) {
     const unlocked = await promptUnlockVault(ws);
@@ -82,7 +82,7 @@ export async function ensureVaultUnlocked(location = null) {
  */
 export async function lockVault(location = null) {
   const ws = location || state.currentLocation || '';
-  if (!ws || ws === 'docs') return;
+  if (!ws || isHelpWorkspace(ws)) return;
   try {
     await apiFetch(`/workspaces/${encodeURIComponent(ws)}/vault/lock`, { method: 'POST' });
     if (state.vaultStatus?.[ws]) {
@@ -107,7 +107,7 @@ export async function lockVault(location = null) {
  */
 export async function promptUnlockVault(location = null) {
   const ws = location || state.currentLocation || '';
-  if (!ws || ws === 'docs') return true;
+  if (!ws || isHelpWorkspace(ws)) return true;
 
   const status = await fetchVaultStatus(ws);
   if (status.unlocked) return true;
@@ -503,7 +503,7 @@ export async function updateVaultBadge() {
   if (!badgeBtn) return;
 
   const ws = state.currentLocation;
-  if (!ws || ws === 'docs') {
+  if (!ws || isHelpWorkspace(ws)) {
     badgeBtn.hidden = true;
     return;
   }

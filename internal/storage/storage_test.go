@@ -923,6 +923,18 @@ func TestWorkspaceMethodsAndHelpers(t *testing.T) {
 	}
 }
 
+func TestResolveWorkspaceEmptyDefaultsToHelpWhenNoWorkspaces(t *testing.T) {
+	store := storage.New(fstest.MapFS{}, os.TempDir())
+	store.SetWorkspaces(map[string]storage.WorkspaceConfig{}, []string{})
+	name, path, code, errMsg := store.ResolveWorkspace("")
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", code, errMsg)
+	}
+	if name != "ExoDeck" || path != "docs" {
+		t.Errorf("expected ExoDeck/docs, got %s/%s", name, path)
+	}
+}
+
 func TestDocsWorkspaceLoading(t *testing.T) {
 	docsFS := fstest.MapFS{
 		"docs/getting-started.md": &fstest.MapFile{
@@ -934,35 +946,55 @@ func TestDocsWorkspaceLoading(t *testing.T) {
 	store := storage.New(docsFS, os.TempDir())
 	store.InitCache()
 
-	// Should list docs note page
-	pages, status, errMsg := store.ListPages("docs")
+	// Should list ExoDeck note page
+	pages, status, errMsg := store.ListPages("ExoDeck")
 	if status != 0 {
-		t.Fatalf("ListPages docs failed: %d %s", status, errMsg)
+		t.Fatalf("ListPages ExoDeck failed: %d %s", status, errMsg)
 	}
 	if len(pages) != 1 {
-		t.Fatalf("expected 1 docs page, got %d: %+v", len(pages), pages)
+		t.Fatalf("expected 1 ExoDeck page, got %d: %+v", len(pages), pages)
 	}
-	if pages[0].PageName != "Getting Started" || pages[0].PageType != "note" {
+	if pages[0].PageName != "Getting Started" || pages[0].PageType != "note" || pages[0].Location != "ExoDeck" {
 		t.Errorf("unexpected page meta: %+v", pages[0])
 	}
 
-	// Read note from docs
-	content, status, errMsg := store.ReadNotePage("getting-started", "docs")
+	// Docs and Help aliases also list ExoDeck pages
+	docsPages, status, errMsg := store.ListPages("docs")
+	if status != 0 || len(docsPages) != 1 {
+		t.Fatalf("ListPages docs alias failed: %d %s", status, errMsg)
+	}
+	helpPages, status, errMsg := store.ListPages("Help")
+	if status != 0 || len(helpPages) != 1 {
+		t.Fatalf("ListPages Help alias failed: %d %s", status, errMsg)
+	}
+
+	// Read note from ExoDeck
+	content, status, errMsg := store.ReadNotePage("getting-started", "ExoDeck")
 	if status != 0 {
-		t.Fatalf("ReadNotePage from docs failed: %d %s", status, errMsg)
+		t.Fatalf("ReadNotePage from ExoDeck failed: %d %s", status, errMsg)
 	}
 	if !strings.Contains(content, "Welcome to StartGRD docs!") {
 		t.Errorf("unexpected docs content: %s", content)
 	}
 
-	// Docs is read-only
-	status, _ = store.DeleteNotePage("getting-started", "docs")
-	if status != 403 {
-		t.Errorf("expected 403 on DeleteNotePage for docs, got %d", status)
+	// Read note from docs and Help aliases
+	contentAlias, status, _ := store.ReadNotePage("getting-started", "docs")
+	if status != 0 || contentAlias != content {
+		t.Errorf("unexpected content from docs alias: %s", contentAlias)
 	}
-	_, _, status, _ = store.WriteNotePage("getting-started", "content", "docs")
+	contentHelpAlias, status, _ := store.ReadNotePage("getting-started", "Help")
+	if status != 0 || contentHelpAlias != content {
+		t.Errorf("unexpected content from Help alias: %s", contentHelpAlias)
+	}
+
+	// ExoDeck is read-only
+	status, _ = store.DeleteNotePage("getting-started", "ExoDeck")
 	if status != 403 {
-		t.Errorf("expected 403 on WriteNotePage for docs, got %d", status)
+		t.Errorf("expected 403 on DeleteNotePage for ExoDeck, got %d", status)
+	}
+	_, _, status, _ = store.WriteNotePage("getting-started", "content", "ExoDeck")
+	if status != 403 {
+		t.Errorf("expected 403 on WriteNotePage for ExoDeck, got %d", status)
 	}
 }
 
@@ -1141,29 +1173,35 @@ func TestWhiteboardAndBpmnDocsAndNotFound(t *testing.T) {
 		"default": {Path: t.TempDir()},
 	}, []string{"default"})
 
-	// Read from docs
-	wb, status, _ := store.ReadWhiteboardPage("sample-wb", "docs")
+	// Read from ExoDeck (and docs/Help aliases)
+	wb, status, msg := store.ReadWhiteboardPage("sample-wb", "ExoDeck")
 	if status != 0 || !strings.Contains(wb, "Sample WB") {
-		t.Errorf("expected 200 reading whiteboard from docs, got %d %s", status, wb)
+		t.Errorf("expected 200 reading whiteboard from ExoDeck, got %d %s, msg: %s", status, wb, msg)
 	}
 
-	bpmn, status, _ := store.ReadBpmnPage("sample-bpmn", "docs")
+	bpmn, status, _ := store.ReadBpmnPage("sample-bpmn", "ExoDeck")
 	if status != 0 || !strings.Contains(bpmn, "Sample BPMN") {
-		t.Errorf("expected 200 reading bpmn from docs, got %d %s", status, bpmn)
+		t.Errorf("expected 200 reading bpmn from ExoDeck, got %d %s", status, bpmn)
 	}
 
-	// Docs read-only checks
-	if _, _, status, _ := store.WriteWhiteboardPage("sample", "data", "docs"); status != 403 {
-		t.Errorf("expected 403 for WriteWhiteboardPage docs, got %d", status)
+	// Read from docs alias
+	wbAlias, status, _ := store.ReadWhiteboardPage("sample-wb", "docs")
+	if status != 0 || wbAlias != wb {
+		t.Errorf("expected 200 reading whiteboard from docs alias, got %d", status)
 	}
-	if status, _ := store.DeleteWhiteboardPage("sample", "docs"); status != 403 {
-		t.Errorf("expected 403 for DeleteWhiteboardPage docs, got %d", status)
+
+	// ExoDeck read-only checks
+	if _, _, status, _ := store.WriteWhiteboardPage("sample", "data", "ExoDeck"); status != 403 {
+		t.Errorf("expected 403 for WriteWhiteboardPage ExoDeck, got %d", status)
 	}
-	if _, _, status, _ := store.WriteBpmnPage("sample", "data", "docs"); status != 403 {
-		t.Errorf("expected 403 for WriteBpmnPage docs, got %d", status)
+	if status, _ := store.DeleteWhiteboardPage("sample", "ExoDeck"); status != 403 {
+		t.Errorf("expected 403 for DeleteWhiteboardPage ExoDeck, got %d", status)
 	}
-	if status, _ := store.DeleteBpmnPage("sample", "docs"); status != 403 {
-		t.Errorf("expected 403 for DeleteBpmnPage docs, got %d", status)
+	if _, _, status, _ := store.WriteBpmnPage("sample", "data", "ExoDeck"); status != 403 {
+		t.Errorf("expected 403 for WriteBpmnPage ExoDeck, got %d", status)
+	}
+	if status, _ := store.DeleteBpmnPage("sample", "ExoDeck"); status != 403 {
+		t.Errorf("expected 403 for DeleteBpmnPage ExoDeck, got %d", status)
 	}
 
 	// Not found checks

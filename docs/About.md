@@ -1,81 +1,103 @@
 # About
 
-ExoDeck is a personal browser start page and a lightweight Personal Knowledge Management (PKM) System. It allows you to organize web links, notes, whiteboard sketches, and diagrams using a fast, file-based architecture.
+> ExoDeck is a fast, keyboard-driven personal browser start page, dashboard, and lightweight local-first Personal Knowledge Management (PKM) system.
+> It combines quick web link collections, rich Markdown notes, freeform Excalidraw whiteboards, and structured BPMN process diagrams into a single, unified interface.
 
-## Installation
+Built with a lightweight Go backend and a vanilla JavaScript and CSS frontend, ExoDeck delivers sub-second startup times, full offline capability, and zero cloud dependency.
 
-ExoDeck is built with Go, meaning it compiles to a single, lightweight executable binary with no external runtime dependencies.
+## What is ExoDeck?
 
-**To install via script:**
+ExoDeck is designed around three fundamental principles:
 
-- **Linux & macOS:**
+1. **Local-First & File-Based**: All your data lives directly on your local filesystem as plain, human-readable files (`.grid`, `.md`, `.excalidraw`, `.bpmn`). There are no databases to maintain, no proprietary formats, and no vendor lock-in.
+2. **Fast & Lightweight**: With no heavy frameworks (no React, Angular, or Vue), ExoDeck launches instantly, uses minimal memory, and responds immediately to your input.
+3. **Privacy & Security First**: With built-in KeePass-style Master Password vaults utilizing Argon2id and AES-256-GCM encryption, your confidential credentials, OTP secrets, and sensitive notes stay protected on your device.
 
-  ```bash
-  curl -fsSL https://raw.githubusercontent.com/ExoDeck/exodeck/main/scripts/install.sh | bash
-  ```
+## Typical Use Cases
 
-- **Windows (PowerShell — No Admin Required):**
+- **Browser Start Page & Bookmarks Cockpit**: Replace cluttered browser bookmarks with structured, searchable link dashboards organized into groups and cards.
+- **Personal Knowledge Management (PKM)**: Maintain a personal wiki, meeting minutes, daily logs, and technical notes with syntax highlighting, auto-calculating tables, and media embeds.
+- **Visual Thinking & Architecture Diagrams**: Sketch system architectures, user journeys, wireframes, and concept maps with infinite-canvas Excalidraw whiteboards.
+- **Business Process Modeling**: Document workflows, business procedures, and systems integration flows with interactive standard BPMN 2.0 diagrams.
+- **Cross-Workspace Task Tracking**: Keep track of todos and deadlines with an integrated global task list, due-date notifications, and overdue badges.
+- **Secure Password & Credential Vault**: Keep login credentials, OTP tokens, and sensitive notes encrypted within workspace vaults without exposing plaintext secrets in configuration files.
 
-  ```powershell
-  irm https://raw.githubusercontent.com/ExoDeck/exodeck/main/scripts/install.ps1 | iex
-  ```
+## Basic Concepts
 
-**To build from source:**
+### Workspaces
 
-1. Ensure you have Go 1.25+ installed on your system.
-2. Clone the repository and navigate into the folder:
+A **Workspace** is an isolated folder on your local drive containing a collection of pages and media files. You can configure multiple workspaces (such as `Default`, `Personal`, `Work`, or `Projects`) to cleanly compartmentalize your data.
 
-   ```bash
-   git clone https://github.com/ExoDeck/exodeck.git
-   cd exodeck
+Each workspace can have:
+
+- Its own local folder path on your machine.
+- A custom SVG icon for quick visual recognition.
+- An optional KeePass-grade Master Password vault for encrypting sensitive credentials and notes.
+- Automatic Git synchronization to back up and version your pages.
+
+#### Configuring Workspaces
+
+Workspaces can be configured via the web interface or in `config.json`:
+
+1. **In the Web UI**:
+   - Open the hamburger menu (**☰**) in the top header and click **Configuration** (or click the gear icon **⚙**).
+   - Select the **Workspaces** tab.
+   - **Add a Workspace**: Click **+ Add Workspace**, specify a friendly display name (e.g. `Work`), and enter a folder path (absolute or relative to your configuration directory).
+   - **Reorder**: Drag and drop the **☰** handle or use the `Up`/`Down` arrow keys while focused on the handle.
+   - **Hide / Show**: Check **Hidden** to hide a workspace from navigation without deleting its data.
+   - **Custom Icon**: Click on a workspace row to upload a custom `.svg` icon.
+   - **Master Password Vault**: Set up or unlock a password vault for credentials and encrypted notes.
+   - **Delete**: Click the trash icon to remove a workspace from ExoDeck (your local files on disk are preserved).
+2. **In `config.json`**:
+   Workspaces are defined under the `"workspaces"` key:
+
+   ```json
+   "workspaces": [
+     {
+       "name": "Personal",
+       "path": "./data",
+       "hidden": false
+     },
+     {
+       "name": "Work",
+       "path": "C:\\Users\\Username\\Documents\\WorkDeck",
+       "hidden": false
+     }
+   ]
    ```
 
-3. Run the application directly or compile it:
+#### Using Workspaces
 
-   ```bash
-   go run .
-   # OR
-   go build -o xd
-   ./xd
-   ```
+- **Switching**:
+  - Click any workspace name in the header strip at the top of the sidebar.
+  - Press the **`#`** shortcut key anywhere to open the quick Workspace Switcher popup, filter by name, and press `Enter`.
+  - Open the floating navigator (**`.`**) and click a workspace icon or press `ArrowRight` / `ArrowLeft`.
+- **Creating Pages**:
+  - When a workspace is active, create pages inside it using the hamburger menu (**☰**) or single-key shortcuts:
+    - **`g`**: New Grid dashboard page
+    - **`q`**: New Markdown Note page
+    - **`w`**: New Excalidraw Whiteboard page
+    - **`b`**: New BPMN Process Diagram
 
-## First Run
+### Page Types
 
-When you launch ExoDeck for the very first time, it does the following automatically:
+ExoDeck supports four native page types to fit different workflows:
 
-- Creates its working directory and default `config.json` in `~/.exodeck` (`$HOME/.exodeck` on Linux/macOS, `%USERPROFILE%\.exodeck` on Windows).
-- Initializes a default workspace folder at `~/.exodeck/data`.
-- Boots up a local web server (by default on port `8000`).
-- Opens with the built-in, readonly **Docs** workspace displayed so you can read this documentation.
+- **Grid Pages (`.grid`)**: Customizable card layouts containing bookmarks, quick notes, tasks with due dates, and encrypted credentials.
+- **Note Pages (`.md`)**: Full Markdown documents supporting code syntax highlighting, auto-sum tables, task lists, and image paste.
+- **Whiteboard Pages (`.excalidraw`)**: Visual sketching, mind maps, and diagrams powered by Excalidraw.
+- **Process Diagrams (`.bpmn`)**: Interactive business process diagrams powered by bpmn-js.
 
-To access the app, simply open your web browser and navigate to:
-[http://localhost:8000](http://localhost:8000)
+For detailed information on each type, explore the [Page Types](Page-Types.md) and [Using Markdown](Using-Markdown.md) guides.
 
-## Configuration (`config.json`)
+### Hierarchical Virtual Folders
 
-All settings for ExoDeck are stored in `config.json`. By default, this file lives in `~/.exodeck/config.json`.
-The binary `xd` can be installed anywhere, including system folders (`/usr/local/bin`, `C:\Program Files\ExoDeck`, etc.).
-If you want to specify a custom directory for your config, cache, and workspaces, launch the app with the `--config-location` or `-cl` flag:
+You can organize pages hierarchically by inserting slashes (`/`) into page titles. For example, naming a page `Projects / ExoDeck / Roadmap` will automatically group it into a collapsible folder tree in the sidebar.
 
-```bash
-xd --config-location /path/to/my/data
-```
+### Help & Documentation Mode
 
-### Important Settings
+When launching ExoDeck for the first time or when no user workspaces contain pages, **Help** mode is automatically enabled so you can read this documentation.
 
-You can modify `config.json` manually or via the Settings menu in the web interface (accessible via the gear icon).
+You can toggle Help on or off anytime via **Help** / **Hide Help** in the hamburger menu (**☰**). When Help is active, the built-in read-only **ExoDeck** workspace appears alongside your personal workspaces.
 
-- **`port`**: The HTTP port the server listens on (default: `8000`).
-- **`theme`**: Set to `"dark"` or `"light"`.
-- **`log_level`**: Controls the verbosity of application logs. Valid options are `"debug"`, `"info"`, `"warn"`, and `"error"` (default: `"info"`).
-- **`log_file`**: Specify a file path to log output to a file instead of, or in addition to, the console. If omitted or empty, logs will only print to the console.
-- **`workspaces`**: An array of directories where your page data (JSON and Markdown files) is stored.
-  > **Master Password Vault:** Workspaces can be protected with a KeePass-style Master Password.
-  > Sensitive credentials (passwords, usernames, URLs, notes, OTP secrets, and encrypted notes) are encrypted using Argon2id and AES-256-GCM.
-  > When sharing a workspace folder or Git repo with a team, members only need to share the workspace's Master Password—no plaintext keys are stored in `config.json`.
-  > Legacy Fernet keys can be migrated to Master Password vaults with one click.
-  > For full cryptographic details, see the [Password Vault & Encryption Guide](Password-Vault.md).
-- **`enable_git_sync`**: If set to `true`, ExoDeck will attempt to automatically commit and sync changes using Git for any workspace initialized as a Git repository.
-- **Font Sizes**: Adjust `font_size_ui`, `font_size_note`, and `font_size_links` to customize the typography scale across the app.
-
-Once your workspace is configured, you can collapse the Docs workspace by clicking the `?` icon in the sidebar, and begin creating your own pages!
+For navigation workflows, menu overviews, and shortcuts, see the [Help & Navigation Guide](Help.md) and [Keyboard Shortcuts](Keyboard-Shortcuts.md).

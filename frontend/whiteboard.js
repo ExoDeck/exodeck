@@ -1,5 +1,5 @@
 // whiteboard.js — Whiteboard page type using Excalidraw (lazy-loaded from CDN)
-import { state, withLocation, refreshPages } from './app.js';
+import { state, withLocation, refreshPages, isHelpWorkspace, showStyledConfirmModal } from './app.js';
 import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility } from './sidebar.js';
 import { showErrorBubble, parseApiError, createEditorActionButtons, handleTabNavigation, navigateAfterPageCancel, validateNewPageTitle } from './ui-utils.js';
 import { openConfirmModal } from './modal.js';
@@ -246,7 +246,7 @@ async function renderWhiteboardView(page, slug, location, cachedDeps = null, cac
     editBtn.title = 'Edit (e)';
     editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
     editBtn.addEventListener('click', () => enterEditMode(page, slug, location, deps, libraryItems));
-    if (location !== 'docs') {
+    if (!isHelpWorkspace(location)) {
       const menuBtn = createPageActionMenu(slug, page['page-name'], 'whiteboard', location, true);
       actionsEl.appendChild(editBtn);
       actionsEl.appendChild(menuBtn);
@@ -390,7 +390,7 @@ async function enterEditMode(page, slug, location, deps, libraryItems) {
 
     actionsEl.appendChild(saveBtn);
     actionsEl.appendChild(cancelBtn);
-    if (location !== 'docs') {
+    if (!isHelpWorkspace(location)) {
       const menuBtn = createPageActionMenu(slug, originalPage['page-name'], 'whiteboard', location, true);
       actionsEl.appendChild(menuBtn);
     }
@@ -437,6 +437,22 @@ export async function renderWhiteboardPage(page, slug, location) {
 // ---------------------------------------------------------------------------
 
 export function createWhiteboardPage(targetLocation = null) {
+  const effectiveLocation = (targetLocation && !isHelpWorkspace(targetLocation))
+    ? targetLocation
+    : ((state.currentLocation && !isHelpWorkspace(state.currentLocation))
+      ? state.currentLocation
+      : ((state.locations ?? []).find(l => !isHelpWorkspace(l)) ?? null));
+  if (!effectiveLocation) {
+    void showStyledConfirmModal(
+      'No Workspace Configured',
+      'Please configure a workspace in Configuration before creating pages.'
+    ).then((confirmed) => {
+      if (confirmed) {
+        void import('./config.js').then(m => m.openConfigModal()).catch(console.error);
+      }
+    });
+    return;
+  }
   updateSidebarVisibility('whiteboard');
   const contentEl = document.getElementById('content');
   const titleEl   = document.getElementById('pageTitle');
@@ -523,9 +539,8 @@ export function createWhiteboardPage(targetLocation = null) {
   };
 
   const save = async () => {
-    const { valid, title: newName, slug: newSlug } = validateNewPageTitle(titleEl, targetLocation, state, slugify);
+    const { valid, title: newName, slug: newSlug } = validateNewPageTitle(titleEl, effectiveLocation, state, slugify);
     if (!valid) return;
-    const effectiveLocation = targetLocation ?? state.currentLocation;
 
     const payload = JSON.stringify({
       'page-name': newName,
@@ -534,7 +549,7 @@ export function createWhiteboardPage(targetLocation = null) {
 
     saveBtn.disabled = true;
     try {
-      const path = withLocation('/whiteboards', targetLocation);
+      const path = withLocation('/whiteboards', effectiveLocation);
       const res = await fetch(`/api/v1${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

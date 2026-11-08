@@ -1,4 +1,4 @@
-import { state } from './app.js';
+import { state, isHelpWorkspace } from './app.js';
 
 let rendererInitialized = false;
 let depsLoadingPromise = null;
@@ -636,7 +636,7 @@ function resolveFlexJustify(textAlign) {
 function initTableEditing(containerElement) {
   if (!containerElement.classList.contains('md-page__content') || containerElement.classList.contains('md-editor-preview')) return;
 
-  const isReadOnlyDoc = state.currentLocation === 'docs';
+  const isReadOnlyDoc = isHelpWorkspace(state.currentLocation);
   const tables = containerElement.querySelectorAll('table');
   tables.forEach((table, index) => {
     if (table.closest('.md-table-wrapper')) return;
