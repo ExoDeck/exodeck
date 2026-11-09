@@ -1,4 +1,5 @@
 import { state, isHelpWorkspace } from './app.js';
+import { initMermaidViewer } from './mermaid-viewer.js';
 
 let rendererInitialized = false;
 let depsLoadingPromise = null;
@@ -384,6 +385,9 @@ export async function renderMarkdownToElement(markdown, containerElement) {
         await mermaid.run({
           nodes: mermaidNodes,
           suppressErrors: true
+        });
+        mermaidNodes.forEach(node => {
+          initMermaidViewer(node);
         });
       } catch (e) {
         console.error('Mermaid rendering error:', e);
