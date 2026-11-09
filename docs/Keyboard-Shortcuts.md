@@ -71,6 +71,20 @@ ExoDeck is designed for speed and efficiency, offering comprehensive keyboard na
 | **`Enter`** | Save changes when editing group titles or page titles |
 | **`Esc`** | Cancel editing and revert to the original content |
 
+## Mermaid Diagram Viewer
+
+| Shortcut | Action |
+| :--- | :--- |
+| **`Ctrl` + Scroll** | Zoom in / out centered at cursor position (in-place) |
+| **Scroll** | Zoom in / out centered at cursor position (fullscreen mode) |
+| **`+`** / **`=`** | Zoom in |
+| **`-`** | Zoom out |
+| **`0`** | Reset zoom and fit diagram to view |
+| **`m`** | Toggle mini-map visibility |
+| **`f`** | Toggle fullscreen mode |
+| **`Arrow keys`** | Pan diagram view (up, down, left, right) |
+| **`Esc`** | Exit fullscreen mode |
+
 ## General Navigation
 
 | Shortcut | Action |

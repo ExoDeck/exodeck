@@ -43,6 +43,26 @@ sequenceDiagram
     John-->>-Alice: I feel great!
 ```
 
+### Interactive Diagram Controls & Mini-Map
+
+Mermaid diagrams in Note pages automatically feature an interactive viewer with zoom, pan, and a mini-map:
+
+- **Pan**: Click and drag anywhere on the diagram canvas to pan.
+- **Zoom**:
+  - Hold **`Ctrl`** (or **`Cmd`**) and scroll the mouse wheel over the diagram to zoom in and out centered at your cursor.
+  - Use the floating toolbar buttons for **Zoom In** (`+`), **Zoom Out** (`-`), or **Fit to View** (`0`).
+  - Pinch-to-zoom is supported on trackpads and touch devices.
+- **Mini-Map**:
+  - A scaled mini-map appears in the bottom-right corner showing the entire diagram.
+  - The highlighted viewport rectangle indicates which portion is currently visible.
+  - **Drag** the viewport rectangle on the mini-map to pan around the diagram.
+  - **Click** anywhere inside the mini-map to instantly jump and center on that section.
+  - Toggle the mini-map on or off anytime using the **Mini-map** button in the toolbar.
+- **Fullscreen Mode**:
+  - Click the **Fullscreen** button in the toolbar (or press `f` when focused) to view large diagrams across your entire screen.
+  - In fullscreen mode, scrolling with the mouse wheel zooms directly without needing `Ctrl`.
+  - Press **`Escape`** or click the close button to exit fullscreen mode.
+
 ## Tables
 
 Markdown tables on Note pages support inline editing and **Auto Sum**:
