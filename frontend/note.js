@@ -1,6 +1,7 @@
 // note.js — note renderer and editor
 import { state, refreshPages, withLocation, apiFetch, isHelpWorkspace } from './app.js';
 import { renderMarkdownToElement, loadMarkdownDependencies } from './markdown-utils.js';
+import { prepareMermaidForPrint } from './mermaid-viewer.js';
 import { showImageManagerModal } from './media-modal.js';
 import { showErrorBubble, parseApiError } from './ui-utils.js';
 import { toggleOutlineSidebar, getIsSidebarOutlineActive, refreshOutlineSidebar } from './outline-nav.js';
@@ -1053,12 +1054,14 @@ export async function printNotePage(slug, location = null) {
 
   // Render markdown to HTML in a temporary element attached to DOM (so mermaid can measure)
   const tmp = document.createElement('div');
+  tmp.dataset.isPrint = 'true';
   tmp.style.position = 'absolute';
   tmp.style.visibility = 'hidden';
   tmp.style.left = '-9999px';
   document.body.appendChild(tmp);
   
   await renderMarkdownToElement(rawMarkdown, tmp);
+  prepareMermaidForPrint(tmp);
   const bodyHtml = tmp.innerHTML;
   
   tmp.remove();
@@ -1071,9 +1074,16 @@ export async function printNotePage(slug, location = null) {
 <meta charset="utf-8">
 <title>${title.replaceAll('<', '&lt;')}</title>
 <style>
-  @page { margin: 1.5cm; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: #111; background: #fff; margin: 0; padding: 2rem; max-width: 800px; margin-inline: auto; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    color: #111;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+  }
   h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
   h2 { font-size: 1.3rem; }
   h3 { font-size: 1.1rem; }
@@ -1083,14 +1093,71 @@ export async function printNotePage(slug, location = null) {
   code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.875em; background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; }
   pre code { background: none; padding: 0; }
   blockquote { border-left: 3px solid #ccc; margin: 0; padding-left: 1rem; color: #555; }
-  img { max-width: 100%; }
+  img { max-width: 100%; height: auto; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; }
   th { background: #f0f0f0; }
   a { color: #2563eb; }
   .code-copy-btn, .inline-code-copy-btn { display: none !important; }
   .md-table-actions, .md-table-autosum-btn, .md-table-edit-btn, .md-table-add-col { display: none !important; }
-  .mermaid svg { filter: invert(1) hue-rotate(180deg); }
+  
+  /* Mermaid Diagram Printing */
+  .mermaid {
+    width: 100%;
+    margin: 1.5rem 0 !important;
+    text-align: left !important;
+    overflow: visible !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .mermaid svg {
+    max-width: 100%;
+    height: auto !important;
+    display: block !important;
+    margin: 0 !important;
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  /* Safety resets in case any mermaid-viewer markup is present */
+  .mermaid-viewer {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    overflow: visible !important;
+    margin: 1.5rem 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .mermaid-viewer__toolbar,
+  .mermaid-viewer__minimap,
+  .mermaid-viewer__hint,
+  .mermaid-viewer__badge,
+  .mermaid-viewer__btn,
+  .mermaid-viewer__expand-btn {
+    display: none !important;
+  }
+  .mermaid-viewer__viewport {
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
+  .mermaid-viewer__canvas {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    display: block !important;
+  }
+  .mermaid-viewer__canvas .mermaid,
+  .mermaid-viewer__canvas .mermaid svg {
+    max-width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    margin: 0 !important;
+  }
 </style>
 </head>
 <body>

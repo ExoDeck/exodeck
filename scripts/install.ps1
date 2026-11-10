@@ -161,7 +161,35 @@ try {
     $extractDir = Join-Path $tempDir "extracted"
     Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
 
-    # 8. Copy binary and unblock
+    # 8. Check if xd process is running and stop it before copying
+    $wasRunning = $false
+    $xdProcesses = Get-Process -Name "xd" -ErrorAction SilentlyContinue
+    if ($xdProcesses) {
+        $wasRunning = $true
+        Write-Info "Found running ExoDeck (xd) process. Stopping it before updating binary..."
+        foreach ($proc in $xdProcesses) {
+            try {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            } catch {
+                Write-Warn "Could not stop process $($proc.Id): $($_.Exception.Message)"
+            }
+        }
+
+        # Wait for processes to exit so file lock is released
+        $waitCount = 0
+        while ((Get-Process -Name "xd" -ErrorAction SilentlyContinue) -and ($waitCount -lt 10)) {
+            Start-Sleep -Milliseconds 500
+            $waitCount++
+        }
+
+        if (Get-Process -Name "xd" -ErrorAction SilentlyContinue) {
+            Write-Warn "One or more xd processes could not be stopped. Copying may fail if the binary is locked."
+        } else {
+            Write-Info "ExoDeck process stopped successfully."
+        }
+    }
+
+    # 9. Copy binary and unblock
     $sourceExe = Join-Path $extractDir $binaryName
     if (-not (Test-Path -Path $sourceExe)) {
         throw "Binary '$binaryName' not found inside downloaded archive."
@@ -184,7 +212,7 @@ try {
         Write-Info "Unblocked $destExe to prevent SmartScreen warnings."
     } catch {}
 
-    # 9. Update PATH environment variable
+    # 10. Update PATH environment variable
     $pathVar = [Environment]::GetEnvironmentVariable("Path", $scope)
     $pathParts = if ($pathVar) { $pathVar -split ';' } else { @() }
     $alreadyInPath = $pathParts | Where-Object { $_.Trim().TrimEnd('\') -eq $targetDir.Trim().TrimEnd('\') }
@@ -200,52 +228,58 @@ try {
         $env:Path = "$targetDir;$env:Path"
     }
 
-    # 10. Create Minimized Shortcut with xd.exe icon in the installation directory
+    # 11. Create Minimized Shortcut with xd.exe icon in the installation directory (only if not existing)
     $shortcutPath = Join-Path $targetDir "ExoDeck.lnk"
-    try {
-        $wscript = New-Object -ComObject WScript.Shell
-        $shortcut = $wscript.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $destExe
-        $shortcut.WorkingDirectory = $targetDir
-        $shortcut.WindowStyle = 7 # 7 = Minimized window
-        $shortcut.IconLocation = "$destExe,0"
-        $shortcut.Description = "ExoDeck - Local-first personal cockpit and knowledge management"
-        $shortcut.Save()
-        Write-Success "Created minimized shortcut: $shortcutPath"
+    $startMenuPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+    $startMenuShortcut = if ($startMenuPrograms) { Join-Path $startMenuPrograms "ExoDeck.lnk" } else { $null }
 
-        # Also copy shortcut to user's Start Menu Programs folder
-        $startMenuPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
-        if ($startMenuPrograms -and (Test-Path -Path $startMenuPrograms)) {
-            Copy-Item -Path $shortcutPath -Destination (Join-Path $startMenuPrograms "ExoDeck.lnk") -Force -ErrorAction SilentlyContinue
-        }
-
-        # Attempt to pin shortcut to taskbar if supported by environment
+    if (-not (Test-Path -Path $shortcutPath)) {
         try {
-            $shell = New-Object -ComObject Shell.Application
-            $folder = $shell.Namespace($targetDir)
-            $item = $folder.ParseName("ExoDeck.lnk")
-            if ($item) {
-                $pinVerb = $item.Verbs() | Where-Object {
-                    $name = $_.Name.Replace('&', '').ToLower()
-                    $name -match 'pin to taskbar' -or $name -match 'an taskleiste anheften' -or $name -match 'taskbar' -or $name -match 'taskleiste'
-                } | Select-Object -First 1
+            $wscript = New-Object -ComObject WScript.Shell
+            $shortcut = $wscript.CreateShortcut($shortcutPath)
+            $shortcut.TargetPath = $destExe
+            $shortcut.WorkingDirectory = $targetDir
+            $shortcut.WindowStyle = 7 # 7 = Minimized window
+            $shortcut.IconLocation = "$destExe,0"
+            $shortcut.Description = "ExoDeck - Local-first personal cockpit and knowledge management"
+            $shortcut.Save()
+            Write-Success "Created minimized shortcut: $shortcutPath"
 
-                if ($pinVerb) {
-                    $pinVerb.DoIt()
-                    Write-Success "Pinned shortcut to taskbar."
-                } else {
-                    $userPinned = Join-Path $env:APPDATA "Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
-                    if (Test-Path -Path $userPinned) {
-                        Copy-Item -Path $shortcutPath -Destination (Join-Path $userPinned "ExoDeck.lnk") -Force -ErrorAction SilentlyContinue
+            # Also copy shortcut to user's Start Menu Programs folder if not existing
+            if ($startMenuShortcut -and (-not (Test-Path -Path $startMenuShortcut))) {
+                Copy-Item -Path $shortcutPath -Destination $startMenuShortcut -Force -ErrorAction SilentlyContinue
+            }
+
+            # Attempt to pin shortcut to taskbar if supported by environment
+            try {
+                $shell = New-Object -ComObject Shell.Application
+                $folder = $shell.Namespace($targetDir)
+                $item = $folder.ParseName("ExoDeck.lnk")
+                if ($item) {
+                    $pinVerb = $item.Verbs() | Where-Object {
+                        $name = $_.Name.Replace('&', '').ToLower()
+                        $name -match 'pin to taskbar' -or $name -match 'an taskleiste anheften' -or $name -match 'taskbar' -or $name -match 'taskleiste'
+                    } | Select-Object -First 1
+
+                    if ($pinVerb) {
+                        $pinVerb.DoIt()
+                        Write-Success "Pinned shortcut to taskbar."
+                    } else {
+                        $userPinned = Join-Path $env:APPDATA "Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+                        if ((Test-Path -Path $userPinned) -and (-not (Test-Path -Path (Join-Path $userPinned "ExoDeck.lnk")))) {
+                            Copy-Item -Path $shortcutPath -Destination (Join-Path $userPinned "ExoDeck.lnk") -Force -ErrorAction SilentlyContinue
+                        }
+                        Write-Info "Taskbar pinning note: Windows may require manual pinning via right-click on the shortcut -> 'Pin to taskbar'."
                     }
-                    Write-Info "Taskbar pinning note: Windows may require manual pinning via right-click on the shortcut -> 'Pin to taskbar'."
                 }
+            } catch {
+                Write-Warn "Could not automatically pin to taskbar: $($_.Exception.Message)"
             }
         } catch {
-            Write-Warn "Could not automatically pin to taskbar: $($_.Exception.Message)"
+            Write-Warn "Could not create shortcut: $($_.Exception.Message)"
         }
-    } catch {
-        Write-Warn "Could not create shortcut: $($_.Exception.Message)"
+    } else {
+        Write-Info "Shortcut already exists at '$shortcutPath'; skipping creation."
     }
 
     # Clean up temp
