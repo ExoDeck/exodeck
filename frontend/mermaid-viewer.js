@@ -21,7 +21,7 @@ function createViewerButton(title, svgIcon) {
 /**
  * Extract natural coordinates (viewBox or bounding box) from an SVG element.
  */
-function getSvgNaturalBounds(svg) {
+export function getSvgNaturalBounds(svg) {
   let vbX = 0;
   let vbY = 0;
   let vbW = 0;
@@ -64,8 +64,8 @@ function getSvgNaturalBounds(svg) {
 export function initMermaidViewer(mermaidNode) {
   if (!mermaidNode) return;
 
-  // Do not wrap inside Grid Note Windows or modals per user preference
-  if (mermaidNode.closest('.note-window__view, .item__note-body, .modal')) return;
+  // Do not wrap inside Grid Note Windows, modals, or print rendering per user preference
+  if (mermaidNode.closest('.note-window__view, .item__note-body, .modal, [data-is-print]')) return;
 
   const svg = mermaidNode.querySelector('svg');
   if (!svg) return;
@@ -88,6 +88,15 @@ export function initMermaidViewer(mermaidNode) {
   const viewer = document.createElement('div');
   viewer.className = 'mermaid-viewer';
   viewer.tabIndex = 0;
+
+  const aspect = vbW / vbH;
+  viewer.style.setProperty('--diagram-natural-width', `${vbW}px`);
+  viewer.style.setProperty('--diagram-natural-height', `${vbH}px`);
+  if (aspect < 0.8) {
+    viewer.classList.add('mermaid-viewer--portrait');
+  } else {
+    viewer.classList.add('mermaid-viewer--landscape');
+  }
 
   const toolbar = document.createElement('div');
   toolbar.className = 'mermaid-viewer__toolbar';
@@ -315,7 +324,29 @@ export function initMermaidViewer(mermaidNode) {
     updateTransform();
   }
 
+  function applyAdaptiveDimensions() {
+    if (isFullscreen) {
+      viewport.style.height = '';
+      return;
+    }
+    const parentW = viewer.parentElement ? viewer.parentElement.clientWidth : 800;
+
+    if (aspect < 0.8) {
+      // Portrait: balanced square card
+      const targetH = Math.min(640, Math.max(500, Math.round(Math.min(parentW, 640) * 0.95)));
+      viewport.style.height = `${targetH}px`;
+    } else {
+      // Landscape: dynamically size height so the diagram can fully use the available screen width
+      const pad = 24;
+      const availW = Math.max(60, parentW - pad * 2);
+      const neededH = Math.round(availW / aspect) + pad * 2;
+      const targetH = Math.max(300, neededH);
+      viewport.style.height = `${targetH}px`;
+    }
+  }
+
   function fitDiagram() {
+    applyAdaptiveDimensions();
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
     if (!vw || !vh) return;
@@ -324,7 +355,7 @@ export function initMermaidViewer(mermaidNode) {
     const availW = Math.max(60, vw - pad * 2);
     const availH = Math.max(60, vh - pad * 2);
 
-    fitScale = Math.min(availW / vbW, availH / vbH, 1.25);
+    fitScale = Math.min(availW / vbW, availH / vbH);
     currentScale = fitScale;
     panX = Math.round((vw - vbW * currentScale) / 2);
     panY = Math.round((vh - vbH * currentScale) / 2);
@@ -344,9 +375,11 @@ export function initMermaidViewer(mermaidNode) {
     fullscreenBtn.setAttribute('aria-label', fullscreenBtn.title);
 
     if (isFullscreen) {
+      viewport.style.height = '';
       document.body.classList.add('mermaid-viewer-open');
     } else {
       document.body.classList.remove('mermaid-viewer-open');
+      applyAdaptiveDimensions();
     }
 
     requestAnimationFrame(() => {
@@ -657,10 +690,20 @@ export function initMermaidViewer(mermaidNode) {
   });
 
   // ResizeObserver to handle container layout changes
+  let lastObservedWidth = 0;
   const resizeObserver = new ResizeObserver(() => {
     if (!viewer.isConnected) {
       resizeObserver.disconnect();
       return;
+    }
+    const currentW = viewport.clientWidth;
+    if (currentW && Math.abs(currentW - lastObservedWidth) > 5) {
+      lastObservedWidth = currentW;
+      const wasAtFit = Math.abs(currentScale - fitScale) < 0.001;
+      applyAdaptiveDimensions();
+      if (wasAtFit) {
+        fitDiagram();
+      }
     }
     clampPan();
     updateTransform();
@@ -670,5 +713,40 @@ export function initMermaidViewer(mermaidNode) {
   // Initial fit after DOM attachment
   requestAnimationFrame(() => {
     fitDiagram();
+  });
+}
+
+/**
+ * Adjust sizing of Mermaid diagrams for print output so diagrams with low
+ * width/height ratio (portrait / vertical diagrams) are not blown up across
+ * the full page width, keeping the rendered font size at most like an h2 heading.
+ *
+ * @param {HTMLElement} containerElement - DOM container containing rendered .mermaid nodes
+ */
+export function prepareMermaidForPrint(containerElement) {
+  if (!containerElement) return;
+  const mermaidNodes = containerElement.querySelectorAll('.mermaid');
+  mermaidNodes.forEach(container => {
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    const { vbW, vbH } = getSvgNaturalBounds(svg);
+    if (!vbW || !vbH) return;
+
+    const aspect = vbW / vbH;
+    // For diagrams with a low width/height ratio (portrait / vertical diagrams),
+    // cap the width so that the rendered font size is at most like an h2 heading (~18px).
+    // At natural 1.0 authored scale, the font size is ~14px. Capping at natural width
+    // (or at most 1.15x) ensures the font never exceeds h2 heading size and avoids
+    // extreme magnification across the page width.
+    // For wide diagrams, capping at natural width allows them to scale down to 100% of page width without clipping.
+    const maxScale = aspect < 1.0 ? 1.15 : 1.0;
+    const maxW = Math.round(vbW * maxScale);
+
+    container.style.setProperty('max-width', `min(100%, ${maxW}px)`, 'important');
+    container.style.setProperty('width', '100%', 'important');
+    svg.style.setProperty('max-width', `min(100%, ${maxW}px)`, 'important');
+    svg.style.setProperty('width', '100%', 'important');
+    svg.style.setProperty('height', 'auto', 'important');
   });
 }

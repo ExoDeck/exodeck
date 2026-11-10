@@ -122,7 +122,25 @@ if curl -fsSL "${CHECKSUM_URL}" -o "${TMP_DIR}/checksums.txt" 2>/dev/null; then
     fi
 fi
 
-# 7. Extract and Install Binary
+# 7. Check if xd is running and stop it before replacing
+WAS_RUNNING=0
+if pgrep -x "${BINARY}" >/dev/null 2>&1 || pidof "${BINARY}" >/dev/null 2>&1; then
+    WAS_RUNNING=1
+    info "Found running ExoDeck (${BINARY}) process. Stopping it before updating binary..."
+    pkill -x "${BINARY}" 2>/dev/null || killall "${BINARY}" 2>/dev/null || true
+    WAIT_COUNT=0
+    while (pgrep -x "${BINARY}" >/dev/null 2>&1 || pidof "${BINARY}" >/dev/null 2>&1) && [ "${WAIT_COUNT}" -lt 10 ]; do
+        sleep 0.5 2>/dev/null || sleep 1
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+    done
+    if pgrep -x "${BINARY}" >/dev/null 2>&1 || pidof "${BINARY}" >/dev/null 2>&1; then
+        warn "Could not terminate running ${BINARY} process."
+    else
+        info "ExoDeck process stopped."
+    fi
+fi
+
+# 8. Extract and Install Binary
 info "Extracting ${BINARY}..."
 tar -xzf "${TMP_DIR}/${ARCHIVE_NAME}" -C "${TMP_DIR}"
 
@@ -135,12 +153,36 @@ else
     sudo chmod 755 "${TARGET_DIR}/${BINARY}"
 fi
 
-# 8. macOS Gatekeeper Quarantine Removal
+# 9. macOS Gatekeeper Quarantine Removal
 if [ "${PLATFORM}" = "darwin" ]; then
     xattr -d com.apple.quarantine "${TARGET_DIR}/${BINARY}" 2>/dev/null || true
 fi
 
-# 9. Verify PATH
+# 10. Desktop shortcut on Linux (only if not existing)
+if [ "${PLATFORM}" = "linux" ] && [ -n "${HOME}" ]; then
+    DESKTOP_DIR="${HOME}/.local/share/applications"
+    DESKTOP_FILE="${DESKTOP_DIR}/exodeck.desktop"
+    if [ ! -f "${DESKTOP_FILE}" ] && [ -d "${HOME}/.local/share" ]; then
+        mkdir -p "${DESKTOP_DIR}" 2>/dev/null || true
+        cat <<EOF > "${DESKTOP_FILE}" 2>/dev/null || true
+[Desktop Entry]
+Name=ExoDeck
+Comment=Local-first personal cockpit and knowledge management
+Exec=${TARGET_DIR}/${BINARY}
+Terminal=false
+Type=Application
+Categories=Utility;Office;
+EOF
+        if [ -f "${DESKTOP_FILE}" ]; then
+            chmod 644 "${DESKTOP_FILE}" 2>/dev/null || true
+            success "Created desktop shortcut: ${DESKTOP_FILE}"
+        fi
+    elif [ -f "${DESKTOP_FILE}" ]; then
+        info "Desktop shortcut already exists at ${DESKTOP_FILE}; skipping creation."
+    fi
+fi
+
+# 11. Verify PATH
 IN_PATH=0
 case ":${PATH}:" in
     *:"${TARGET_DIR}":*) IN_PATH=1 ;;

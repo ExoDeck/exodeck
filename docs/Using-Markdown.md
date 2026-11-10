@@ -62,6 +62,10 @@ Mermaid diagrams in Note pages automatically feature an interactive viewer with 
   - Click the **Fullscreen** button in the toolbar (or press `f` when focused) to view large diagrams across your entire screen.
   - In fullscreen mode, scrolling with the mouse wheel zooms directly without needing `Ctrl`.
   - Press **`Escape`** or click the close button to exit fullscreen mode.
+- **Adaptive Sizing & Clean Printing**:
+  - Landscape diagrams dynamically size height to utilize 100% of the available content width without artificial height limits or blank side borders.
+  - Tall portrait diagrams automatically adapt to a balanced card framing rather than being squashed into an extreme letterbox or stretched vertically.
+  - In Print view, all controls, toolbars, and mini-maps are automatically hidden, diagrams align to the left margin without right-edge clipping, and low width/height ratio diagrams have their font capped to heading size.
 
 ## Tables
 
