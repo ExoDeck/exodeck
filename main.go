@@ -18,6 +18,7 @@ import (
 
 	"github.com/ExoDeck/exodeck/internal/config"
 	"github.com/ExoDeck/exodeck/internal/handlers"
+	"github.com/ExoDeck/exodeck/internal/mcp"
 	"github.com/ExoDeck/exodeck/internal/models"
 	"github.com/ExoDeck/exodeck/internal/storage"
 )
@@ -38,9 +39,15 @@ func ResolveConfigDir(explicit string) (string, error) {
 
 func main() {
 	var configLocation string
+	var mcpMode bool
 	flag.StringVar(&configLocation, "cl", "", "Directory for config.json, cache, and data/ (defaults to ~/.exodeck or $HOME/.exodeck)")
 	flag.StringVar(&configLocation, "config-location", "", "Directory for config.json, cache, and data/ (defaults to ~/.exodeck or $HOME/.exodeck)")
+	flag.BoolVar(&mcpMode, "mcp", false, "Run ExoDeck as an MCP server over stdio (stdin/stdout)")
 	flag.Parse()
+
+	if mcpMode {
+		log.SetOutput(os.Stderr)
+	}
 
 	var err error
 	configLocation, err = ResolveConfigDir(configLocation)
@@ -69,7 +76,11 @@ func main() {
 	}
 
 	// Setup logging
-	logFile := setupLogger(cfg, configLocation)
+	defaultOut := io.Writer(os.Stdout)
+	if mcpMode {
+		defaultOut = os.Stderr
+	}
+	logFile := setupLoggerWithDefault(cfg, configLocation, defaultOut)
 	if logFile != nil {
 		defer func() {
 			_ = logFile.Close()
@@ -84,6 +95,16 @@ func main() {
 
 	store := storage.New(DocsFS, configLocation)
 	store.SetWorkspaces(locs, order)
+
+	if mcpMode {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		mcpSrv := mcp.NewServer(store, configLocation, nil, Version)
+		if err := mcpSrv.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatalf("mcp stdio server error: %v", err)
+		}
+		return
+	}
 
 	// Build HTTP server
 	srv := &handlers.Server{
@@ -142,6 +163,10 @@ func printBanner(version string) {
 }
 
 func setupLogger(cfg models.ConfigModel, configDir string) *os.File {
+	return setupLoggerWithDefault(cfg, configDir, os.Stdout)
+}
+
+func setupLoggerWithDefault(cfg models.ConfigModel, configDir string, defaultOut io.Writer) *os.File {
 	var level slog.Level
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug":
@@ -162,7 +187,7 @@ func setupLogger(cfg models.ConfigModel, configDir string) *os.File {
 
 	var handler slog.Handler
 	var logFile *os.File
-	var writer io.Writer = os.Stdout
+	writer := defaultOut
 
 	if cfg.LogFile != "" {
 		logPath := cfg.LogFile
@@ -177,7 +202,7 @@ func setupLogger(cfg models.ConfigModel, configDir string) *os.File {
 			log.Fatalf("error opening log file %s: %v", logPath, err)
 		}
 		logFile = f
-		writer = io.MultiWriter(os.Stdout, f)
+		writer = io.MultiWriter(defaultOut, f)
 	}
 
 	// Use TextHandler for console/mixed output, or JSONHandler if preferred. We'll use TextHandler for both.
