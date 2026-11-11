@@ -145,6 +145,7 @@ ExoDeck includes complete built-in documentation accessible directly inside the 
 - [Password Vault & Encryption](docs/Password-Vault.md)
 - [Keyboard Shortcuts](docs/Keyboard-Shortcuts.md)
 - [Using Markdown](docs/Using-Markdown.md)
+- [MCP Server Integration](docs/MCP-Server.md)
 - [License](docs/License.md)
 
 ---

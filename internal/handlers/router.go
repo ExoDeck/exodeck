@@ -3,12 +3,14 @@ package handlers
 import (
 	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/ExoDeck/exodeck/internal/mcp"
 	"github.com/ExoDeck/exodeck/internal/storage"
 	"github.com/ExoDeck/exodeck/internal/vault"
 )
@@ -124,7 +126,17 @@ func NewRouter(s *Server) http.Handler {
 		r.Get("/sync/status/all", s.syncStatusAll)
 		r.Get("/sync/status", s.syncStatus)
 		r.Post("/sync", s.syncData)
+
+		// MCP Server (also mounted at root /mcp)
+		mcpSrv := mcp.NewServer(s.Store, s.ConfigDir, s.getGitRunner(), "")
+		r.Handle("/mcp", mcpSrv)
+		r.Handle("/mcp/*", mcpSrv)
 	})
+
+	// Root MCP Server endpoint (/mcp and /mcp/*)
+	mcpSrv := mcp.NewServer(s.Store, s.ConfigDir, s.getGitRunner(), "")
+	r.Handle("/mcp", mcpSrv)
+	r.Handle("/mcp/*", mcpSrv)
 
 	// Static frontend — SPA fallback: serve index.html for unknown routes
 	r.NotFound(s.serveStatic)
@@ -147,5 +159,5 @@ func noCacheStaticMiddleware(next http.Handler) http.Handler {
 }
 
 func isAPIPath(path string) bool {
-	return len(path) >= 4 && path[:4] == "/api"
+	return strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/mcp")
 }

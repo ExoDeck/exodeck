@@ -23,5 +23,9 @@
         "totp",
         "uppercased",
         "xlzd"
-    ]
+    ],
+    "sonarlint.connectedMode.project": {
+        "connectionId": "exodeck",
+        "projectKey": "ExoDeck_exodeck"
+    }
 }

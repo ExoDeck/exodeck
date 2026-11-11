@@ -100,4 +100,4 @@ When launching ExoDeck for the first time or when no user workspaces contain pag
 
 You can toggle Help on or off anytime via **Help** / **Hide Help** in the hamburger menu (**☰**). When Help is active, the built-in read-only **ExoDeck** workspace appears alongside your personal workspaces.
 
-For navigation workflows, menu overviews, and shortcuts, see the [Help & Navigation Guide](Help.md) and [Keyboard Shortcuts](Keyboard-Shortcuts.md).
+For navigation workflows, menu overviews, and shortcuts, see the [Help & Navigation Guide](Help.md), [Keyboard Shortcuts](Keyboard-Shortcuts.md), and [MCP Server Integration](MCP-Server.md).
