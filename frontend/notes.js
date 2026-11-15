@@ -196,7 +196,9 @@ function openGenericNoteWindow({
   win.appendChild(actionsDiv);
   document.body.appendChild(overlay);
 
-  const isDirty = () => titleInput.value !== (currentItem.title ?? '') || contentArea.value !== (currentRawText ?? '');
+  let editInitialTitle = '';
+  let editInitialContent = '';
+  const isDirty = () => titleInput.value !== editInitialTitle || contentArea.value !== editInitialContent;
 
   requestCancelEdit = createNoteCancelHandler({
     isDirty,
@@ -251,8 +253,10 @@ function openGenericNoteWindow({
     } else {
       titleEl.textContent = currentItem.title ? `✎ ${currentItem.title}` : 'Edit Note';
     }
-    titleInput.value = currentItem.title;
-    contentArea.value = currentRawText;
+    titleInput.value = currentItem.title ?? '';
+    contentArea.value = currentRawText ?? '';
+    editInitialTitle = titleInput.value;
+    editInitialContent = contentArea.value;
 
     renderItemDates(metaDiv, currentItem);
 

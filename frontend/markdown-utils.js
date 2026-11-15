@@ -280,20 +280,85 @@ export function updateMarkdownCheckbox(rawMarkdown, checkboxIndex, isChecked) {
   return rawMarkdown;
 }
 
+function collectReusableMermaidNodes(containerElement) {
+  const reusable = new Map();
+  containerElement.querySelectorAll('.mermaid[data-mermaid-source]').forEach(node => {
+    if (!node.querySelector('svg')) return;
+    const wrapper = node.closest('.mermaid-viewer') || node;
+    const source = node.dataset.mermaidSource;
+    let bucket = reusable.get(source);
+    if (!bucket) {
+      bucket = [];
+      reusable.set(source, bucket);
+    }
+    bucket.push(wrapper);
+  });
+  return reusable;
+}
+
+function reuseCachedMermaidNodes(containerElement, reusable) {
+  const mermaidNodes = containerElement.querySelectorAll('.mermaid');
+  mermaidNodes.forEach(node => {
+    const source = (node.textContent ?? '').trim();
+    node.dataset.mermaidSource = source;
+    const bucket = reusable.get(source);
+    if (bucket && bucket.length > 0) {
+      node.replaceWith(bucket.shift());
+    }
+  });
+}
+
+async function renderMermaidDiagrams(containerElement, reusable, renderSeq) {
+  if (typeof mermaid === 'undefined') return;
+
+  reuseCachedMermaidNodes(containerElement, reusable);
+
+  const unrenderedNodes = containerElement.querySelectorAll('.mermaid:not([data-mermaid-rendered])');
+  if (unrenderedNodes.length === 0) return;
+
+  try {
+    // use mermaid.run to process specifically these nodes
+    await mermaid.run({
+      nodes: unrenderedNodes,
+      suppressErrors: true
+    });
+    if (renderSeq !== containerElement._ExoDeckRenderSeq) return;
+    unrenderedNodes.forEach(node => {
+      node.dataset.mermaidRendered = 'true';
+      initMermaidViewer(node);
+    });
+  } catch (e) {
+    console.error('Mermaid rendering error:', e);
+  }
+}
+
 /**
  * Render a markdown string to HTML and initialize any Mermaid diagrams.
  *
  * @param {string} markdown - The raw markdown text
  * @param {HTMLElement} containerElement - The DOM element to populate
+ * @param {{ skipMermaid?: boolean }} [options]
  */
-export async function renderMarkdownToElement(markdown, containerElement) {
+export async function renderMarkdownToElement(markdown, containerElement, options = {}) {
+  const renderSeq = (containerElement._ExoDeckRenderSeq || 0) + 1;
+  containerElement._ExoDeckRenderSeq = renderSeq;
+
   await loadMarkdownDependencies();
+  if (renderSeq !== containerElement._ExoDeckRenderSeq) return;
+
   initRenderer();
 
   if (typeof marked === 'undefined') {
     containerElement.textContent = markdown;
     return;
   }
+
+  const isEditorPreview = containerElement.classList.contains('md-editor-preview');
+  const skipMermaid = Boolean(options.skipMermaid)
+    || (isEditorPreview && !containerElement.closest('.md-editor-container--preview-active'));
+  const reusableMermaid = (!skipMermaid && isEditorPreview)
+    ? collectReusableMermaidNodes(containerElement)
+    : new Map();
 
   // Parse markdown
   containerElement.innerHTML = marked.parse(markdown || '');
@@ -376,23 +441,10 @@ export async function renderMarkdownToElement(markdown, containerElement) {
   };
   containerElement.addEventListener('change', containerElement._ExoDeckCheckboxHandler);
 
-  // Render mermaid diagrams
-  if (typeof mermaid !== 'undefined') {
-    const mermaidNodes = containerElement.querySelectorAll('.mermaid');
-    if (mermaidNodes.length > 0) {
-      try {
-        // use mermaid.run to process specifically these nodes
-        await mermaid.run({
-          nodes: mermaidNodes,
-          suppressErrors: true
-        });
-        mermaidNodes.forEach(node => {
-          initMermaidViewer(node);
-        });
-      } catch (e) {
-        console.error('Mermaid rendering error:', e);
-      }
-    }
+  // Render mermaid diagrams unless skipped (e.g. editor preview is collapsed)
+  if (!skipMermaid) {
+    await renderMermaidDiagrams(containerElement, reusableMermaid, renderSeq);
+    if (renderSeq !== containerElement._ExoDeckRenderSeq) return;
   }
 
   // Initialize table editing
