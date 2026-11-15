@@ -54,14 +54,15 @@ function slugify(name) {
  * @returns {{ title: string|null, body: string }}
  */
 function extractTitleFromMarkdown(rawMarkdown) {
-  const lines = (rawMarkdown ?? '').split('\n');
+  const normalized = (rawMarkdown ?? '').replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
   if (lines[0]?.startsWith('# ')) {
     const title = lines[0].slice(2).trim();
     const rest = lines.slice(1);
     if (rest[0] === '') rest.shift();
     return { title, body: rest.join('\n') };
   }
-  return { title: null, body: rawMarkdown ?? '' };
+  return { title: null, body: normalized };
 }
 
 /**
@@ -298,9 +299,9 @@ function createToolbar(textarea) {
 
   toolbar.appendChild(createSep());
 
-  toolbar.appendChild(createBtn('H1', '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17 12l2-2v8"/>', () => insertMarkdown(textarea, '# ', '', 'Heading 1')));
   toolbar.appendChild(createBtn('H2', '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/>', () => insertMarkdown(textarea, '## ', '', 'Heading 2')));
   toolbar.appendChild(createBtn('H3', '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2"/><path d="M17 17.5c2 1.5 4 .5 4-1.5a2 2 0 0 0-2-2"/>', () => insertMarkdown(textarea, '### ', '', 'Heading 3')));
+  toolbar.appendChild(createBtn('H4', '<path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17 10v4h4"/><path d="M21 10v8"/>', () => insertMarkdown(textarea, '#### ', '', 'Heading 4')));
 
   toolbar.appendChild(createSep());
   
@@ -312,6 +313,10 @@ function createToolbar(textarea) {
 
   toolbar.appendChild(createBtn('Single Line Code', '<polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>', () => insertMarkdown(textarea, '`', '`', 'code')));
   toolbar.appendChild(createBtn('Codeblock', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><polyline points="10 13 8 15 10 17"></polyline><polyline points="14 13 16 15 14 17"></polyline>', () => insertMarkdown(textarea, '\n```\n', '\n```\n', 'code block')));
+
+  toolbar.appendChild(createSep());
+
+  toolbar.appendChild(createBtn('Link', '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>', () => insertMarkdown(textarea, '[', '](url)', 'link')));
 
   toolbar.appendChild(createSep());
 
@@ -615,46 +620,63 @@ function highlightCodeBlock(code, lang) {
 }
 
 function formatCodeBlockSpan(openLine, codeLines, closeLine, lang) {
+  if (codeLines.length === 0) {
+    return `<span class="hljs-code">${escapeHtml(openLine)}\n${escapeHtml(closeLine)}</span>`;
+  }
   const code = codeLines.join('\n');
   const highlighted = highlightCodeBlock(code, lang);
   return `<span class="hljs-code">${escapeHtml(openLine)}\n${highlighted}\n${escapeHtml(closeLine)}</span>`;
 }
 
+const ATX_HEADING_RE = /^[ \t]{0,3}#{1,6}(?:[ \t]+.*|$)/;
+
 function tryParseFenceOpen(line) {
-  const match = line.match(/^[ \t]*```+[ \t]*([a-zA-Z0-9-]+)?/);
-  return match ? (match[1] || '') : null;
+  const match = line.match(/^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([^`~\r\n]*)$/);
+  if (!match) return null;
+  const fence = match[1];
+  const info = match[2].trim();
+  const langMatch = info.match(/^([a-zA-Z0-9_-]+)/);
+  return {
+    fenceChar: fence[0],
+    fenceLen: fence.length,
+    lang: langMatch ? langMatch[1] : '',
+  };
 }
 
-function isFenceClose(line) {
-  return /^[ \t]*```+[ \t]*$/.test(line);
+function isFenceClose(line, fenceChar, fenceLen) {
+  const match = line.match(/^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/);
+  if (!match) return false;
+  const fence = match[1];
+  return fence[0] === fenceChar && fence.length >= fenceLen;
 }
 
-function flushCurrentMd(state) {
-  if (state.currentMd.length === 0) return;
-  state.html += hljs.highlight(state.currentMd.join('\n'), { language: 'markdown' }).value;
-  state.currentMd = [];
+function highlightMarkdownLine(line) {
+  if (line.length === 0) return '';
+  if (ATX_HEADING_RE.test(line)) {
+    return `<span class="hljs-section">${escapeHtml(line)}</span>`;
+  }
+  return hljs.highlight(line, { language: 'markdown' }).value;
 }
 
-function processLineInEditor(line, state, isLastLine) {
+function processLineInEditor(line, state) {
   if (!state.inCodeBlock) {
-    const fenceLang = tryParseFenceOpen(line);
-    if (fenceLang !== null) {
-      flushCurrentMd(state);
-      if (state.html.length > 0) state.html += '\n';
+    const fence = tryParseFenceOpen(line);
+    if (fence !== null) {
       state.inCodeBlock = true;
       state.codeBlockOpenLine = line;
-      state.codeBlockLang = fenceLang;
+      state.codeBlockLang = fence.lang;
+      state.codeBlockFenceChar = fence.fenceChar;
+      state.codeBlockFenceLen = fence.fenceLen;
       state.codeBlockLines = [];
       return;
     }
-    state.currentMd.push(line);
+    state.segments.push(highlightMarkdownLine(line));
     return;
   }
 
-  if (isFenceClose(line)) {
+  if (isFenceClose(line, state.codeBlockFenceChar, state.codeBlockFenceLen)) {
     state.inCodeBlock = false;
-    state.html += formatCodeBlockSpan(state.codeBlockOpenLine, state.codeBlockLines, line, state.codeBlockLang);
-    if (!isLastLine) state.html += '\n';
+    state.segments.push(formatCodeBlockSpan(state.codeBlockOpenLine, state.codeBlockLines, line, state.codeBlockLang));
     return;
   }
   state.codeBlockLines.push(line);
@@ -665,23 +687,26 @@ function updateEditorSyntaxHighlighting(text) {
 
   const lines = text.split('\n');
   const state = {
-    html: '',
-    currentMd: [],
+    segments: [],
     inCodeBlock: false,
     codeBlockLines: [],
     codeBlockLang: '',
+    codeBlockFenceChar: '',
+    codeBlockFenceLen: 0,
     codeBlockOpenLine: '',
   };
 
-  for (let i = 0; i < lines.length; i++) {
-    processLineInEditor(lines[i], state, i === lines.length - 1);
+  for (const line of lines) {
+    processLineInEditor(line, state);
   }
 
   if (state.inCodeBlock) {
-    state.currentMd.push(state.codeBlockOpenLine, ...state.codeBlockLines);
+    state.segments.push(highlightMarkdownLine(state.codeBlockOpenLine));
+    for (const line of state.codeBlockLines) {
+      state.segments.push(highlightMarkdownLine(line));
+    }
   }
-  flushCurrentMd(state);
-  return state.html;
+  return state.segments.join('\n');
 }
 
 function updateEditorHighlight(text, highlightCode) {
@@ -779,10 +804,18 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   container.appendChild(preview);
   grid.appendChild(container);
 
-  // Scroll sync
-  textarea.addEventListener('scroll', () => {
+  // Overlay geometry & scroll sync (match textarea scrollbar width and scroll offsets)
+  const syncEditorOverlay = () => {
+    if (!textarea.isConnected) return;
+    const scrollbarWidth = Math.max(0, textarea.offsetWidth - textarea.clientWidth);
+    highlightPre.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : '0px';
     highlightPre.scrollTop = textarea.scrollTop;
     highlightPre.scrollLeft = textarea.scrollLeft;
+  };
+
+  // Scroll sync
+  textarea.addEventListener('scroll', () => {
+    syncEditorOverlay();
 
     if (container.classList.contains('md-editor-container--preview-active')) {
       const taMaxScroll = textarea.scrollHeight - textarea.clientHeight;
@@ -793,6 +826,18 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
       }
     }
   });
+
+  const resizeObserver = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => {
+      if (!textarea.isConnected) {
+        resizeObserver.disconnect();
+        return;
+      }
+      syncEditorOverlay();
+    })
+    : null;
+  resizeObserver?.observe(textarea);
+  window.addEventListener('resize', syncEditorOverlay);
 
   const updatePreviewRef = { current: () => {} };
   const { saveBtn, cancelBtn } = setupEditorActions(actionsEl, slug, location, isNew, extractedTitle, textarea, updatePreviewRef);
@@ -829,25 +874,52 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
 
   // Live Preview & Highlighting Update
   let afRequest = null;
+  let previewTimer = null;
   let initialRender = true;
-  const updatePreview = () => {
+  let pendingImmediatePreview = false;
+  const PREVIEW_DEBOUNCE_MS = 200;
+
+  const renderPreviewContent = () => {
+    if (!preview.isConnected) return;
+    const isInitial = initialRender;
+    initialRender = false;
+    const isPreviewActive = container.classList.contains('md-editor-container--preview-active');
+    void renderMarkdownToElement(textarea.value, preview, { skipMermaid: !isPreviewActive })
+      .then(() => {
+        if (isInitial && getIsSidebarOutlineActive()) {
+          refreshOutlineSidebar();
+        }
+      })
+      .catch(console.error);
+  };
+
+  const updatePreview = (options) => {
+    if (options?.immediate === true) {
+      pendingImmediatePreview = true;
+    }
     if (afRequest) cancelAnimationFrame(afRequest);
     afRequest = requestAnimationFrame(() => {
       // 1. Update syntax highlighting layer
       let text = textarea.value;
       if (text.endsWith('\n')) text += ' '; // ensure exact scroll height
       updateEditorHighlight(text, highlightCode);
+      syncEditorOverlay();
 
-      // 2. Update preview rendering unconditionally (so outline view can find headings)
-      const isInitial = initialRender;
-      initialRender = false;
-      void renderMarkdownToElement(textarea.value, preview)
-        .then(() => {
-          if (isInitial && getIsSidebarOutlineActive()) {
-            refreshOutlineSidebar();
-          }
-        })
-        .catch(console.error);
+      // 2. Update preview rendering (immediate on load/expand, debounced during typing)
+      if (previewTimer) {
+        clearTimeout(previewTimer);
+        previewTimer = null;
+      }
+      const shouldRenderNow = pendingImmediatePreview || initialRender;
+      pendingImmediatePreview = false;
+      if (shouldRenderNow) {
+        renderPreviewContent();
+      } else {
+        previewTimer = setTimeout(() => {
+          previewTimer = null;
+          renderPreviewContent();
+        }, PREVIEW_DEBOUNCE_MS);
+      }
       afRequest = null;
     });
   };
@@ -855,8 +927,8 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   updatePreviewRef.current = updatePreview;
   
   // Initial highlight call
-  updatePreview();
-  void loadMarkdownDependencies().then(updatePreview).catch(console.error);
+  updatePreview({ immediate: true });
+  void loadMarkdownDependencies().then(() => updatePreview({ immediate: true })).catch(console.error);
 
   attachMediaHandlers(textarea, saveBtn, slug, location, isNew, updatePreview);
 
@@ -878,7 +950,7 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
       resizerIcon.title = 'Collapse preview';
       resizerIcon.setAttribute('aria-label', 'Collapse preview');
       resizer.title = 'Drag to resize';
-      updatePreview();
+      updatePreview({ immediate: true });
     } else {
       preview.style.width = '0px';
       resizerIcon.innerHTML = SVG_CHEVRON_LEFT;
@@ -933,6 +1005,16 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   document.addEventListener('mouseup', onMouseUp);
 
   function cleanup() {
+    if (afRequest) {
+      cancelAnimationFrame(afRequest);
+      afRequest = null;
+    }
+    if (previewTimer) {
+      clearTimeout(previewTimer);
+      previewTimer = null;
+    }
+    resizeObserver?.disconnect();
+    window.removeEventListener('resize', syncEditorOverlay);
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
@@ -949,8 +1031,8 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
     document.getElementById('content')?.classList.remove('content--editing');
   }
 
-  const initialTitle = extractedTitle ?? '';
-  const initialBody = bodyMarkdown ?? '';
+  const initialTitle = titleEl?.textContent?.trim() ?? '';
+  const initialBody = textarea.value;
   const isDirty = () => (titleEl?.textContent?.trim() ?? '') !== initialTitle || textarea.value !== initialBody;
 
   const requestCancel = async () => {

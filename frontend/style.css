@@ -4366,11 +4366,18 @@ a:hover {
   pointer-events: none;
   font-family: var(--font-mono);
   font-size: var(--font-size-note);
+  font-weight: 400;
+  font-style: normal;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
   line-height: 1.5;
   letter-spacing: normal;
   word-spacing: normal;
+  tab-size: 4;
+  text-indent: 0;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  word-break: normal;
   color: var(--color-text);
   overflow: hidden;
   box-sizing: border-box;
@@ -4379,10 +4386,20 @@ a:hover {
 }
 
 .md-editor-highlight code.hljs {
+  display: inline;
+  overflow: visible;
   background: transparent;
   padding: 0;
+  margin: 0;
+  border: none;
   font-family: inherit;
   font-size: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  line-height: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
 }
 
 .md-editor-highlight code.hljs * {
@@ -4467,9 +4484,15 @@ a:hover {
   resize: none;
   font-family: var(--font-mono);
   font-size: var(--font-size-note);
+  font-weight: 400;
+  font-style: normal;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
   line-height: 1.5;
   letter-spacing: normal;
   word-spacing: normal;
+  tab-size: 4;
+  text-indent: 0;
   padding: 0;
   margin: 0;
   background-color: transparent;
@@ -4486,6 +4509,9 @@ a:hover {
   z-index: 2;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  word-break: normal;
+  overflow-x: hidden;
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
