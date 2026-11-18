@@ -5,44 +5,66 @@ let rendererInitialized = false;
 let depsLoadingPromise = null;
 
 function isExternalHref(href) {
-  return /^(https?:\/\/|mailto:|tel:|data:|javascript:)/i.test(href);
+  return /^(mailto:|tel:|data:|javascript:)/i.test(href);
 }
 
-function normalizeWorkspacePath(pathname) {
-  const clean = pathname.startsWith('/') ? pathname : `/${pathname}`;
-  const segments = clean.split('/').filter(Boolean);
-  if (segments.length === 0) return null;
-
-  // If link is a bare slug path (e.g. /page-a or page-a), scope it to current workspace.
-  if (segments.length === 1 && state.currentLocation) {
-    return `/${state.currentLocation}/${segments[0]}`;
+function safeDecodeSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
   }
-
-  return clean;
 }
 
 function resolveInternalPageTarget(rawHref) {
-  if (!rawHref || rawHref.startsWith('#') || isExternalHref(rawHref)) return null;
-
-  let pathname;
-  if (rawHref.startsWith('/')) {
-    pathname = rawHref;
-  } else {
-    const basePath = state.currentLocation ? `/${state.currentLocation}/` : '/';
-    pathname = new URL(rawHref, `${window.location.origin}${basePath}`).pathname;
+  if (!rawHref || typeof rawHref !== 'string' || rawHref.startsWith('#') || isExternalHref(rawHref)) {
+    return null;
   }
 
-  const normalizedPath = normalizeWorkspacePath(pathname);
-  if (!normalizedPath) return null;
+  let pathname = rawHref.trim();
+  if (!pathname) return null;
 
-  const segments = normalizedPath.split('/').filter(Boolean);
-  if (segments.length < 2) return null;
+  if (/^https?:\/\//i.test(pathname)) {
+    try {
+      const parsed = new URL(pathname);
+      if (parsed.origin !== window.location.origin) return null;
+      pathname = parsed.pathname;
+    } catch {
+      return null;
+    }
+  } else if (!pathname.startsWith('/')) {
+    try {
+      const basePath = state.currentLocation ? `/${state.currentLocation}/` : '/';
+      pathname = new URL(pathname, `${window.location.origin}${basePath}`).pathname;
+    } catch {
+      return null;
+    }
+  }
 
-  const [location, slug] = segments;
-  const exists = state.pages.some(p => p.location === location && p.slug === slug);
-  if (!exists) return null;
+  const segments = pathname.split('/').filter(Boolean).map(safeDecodeSegment);
+  if (segments.length === 0) return null;
 
-  return { location, slug, path: `/${location}/${slug}` };
+  let matched;
+  if (segments.length >= 2) {
+    const locLower = segments[0].toLowerCase();
+    const slugLower = segments[1].toLowerCase();
+    matched = state.pages.find(
+      p => (p.location ?? '').toLowerCase() === locLower && (p.slug ?? '').toLowerCase() === slugLower
+    ) ?? null;
+  } else {
+    const slugLower = segments[0].toLowerCase();
+    matched = state.pages.find(
+      p => (p.slug ?? '').toLowerCase() === slugLower && p.location === state.currentLocation
+    ) ?? state.pages.find(p => (p.slug ?? '').toLowerCase() === slugLower) ?? null;
+  }
+
+  if (!matched) return null;
+
+  return {
+    location: matched.location ?? null,
+    slug: matched.slug,
+    path: matched.location ? `/${matched.location}/${matched.slug}` : `/${matched.slug}`,
+  };
 }
 
 async function loadScript(src) {
@@ -149,6 +171,9 @@ function initRenderer() {
 
     let out = `<a href="${href}"`;
     if (title) out += ` title="${title}"`;
+    if (!target && href && !href.startsWith('#')) {
+      out += ' target="_blank" rel="noopener noreferrer"';
+    }
     out += `>${text ?? ''}</a>`;
     return out;
   };
@@ -362,6 +387,19 @@ export async function renderMarkdownToElement(markdown, containerElement, option
 
   // Parse markdown
   containerElement.innerHTML = marked.parse(markdown || '');
+
+  // Ensure external links open in a new tab and internal page links stay in the same tab.
+  containerElement.querySelectorAll('a[href]').forEach(anchor => {
+    const href = anchor.getAttribute('href') ?? '';
+    const target = resolveInternalPageTarget(href);
+    if (target) {
+      anchor.setAttribute('href', target.path);
+      anchor.removeAttribute('target');
+    } else if (href && !href.startsWith('#')) {
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
 
   // Assign IDs to headings for outline navigation
   const headings = containerElement.querySelectorAll('h1, h2, h3, h4, h5, h6');

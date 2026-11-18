@@ -1,6 +1,6 @@
 // content.js — Main content area
 import { state, apiFetch, withLocation, refreshPages, isHelpWorkspace } from './app.js';
-import { renderGroup } from './groupbox.js';
+import { renderGroup, createNewStickyNoteCard } from './groupbox.js';
 import { renderNoteContent, cleanupActiveNoteEditor } from './note.js';
 import { renderWhiteboardPage, unmountWhiteboard } from './whiteboard.js';
 import { renderBpmnPage, unmountBpmn } from './bpmn.js';
@@ -14,39 +14,50 @@ let editEscListener = null;
 // Add Group modal
 // ---------------------------------------------------------------------------
 
-function startInlineGroupCreation() {
+export function startInlineGroupCreation(groupType = 'group') {
   const grid = document.getElementById('pageGrid');
-  const addCard = grid.querySelector('.group-card--add');
-  if (!addCard) return;
+  if (!grid) return;
+  const addControl = document.getElementById('gridAddGroup');
+
+  if (groupType === 'sticky') {
+    const { card, focusTarget } = createNewStickyNoteCard(state.currentSlug, state.currentLocation);
+    if (addControl) {
+      addControl.replaceWith(card);
+    } else {
+      grid.appendChild(card);
+    }
+    focusTarget.focus();
+    return;
+  }
 
   const card = document.createElement('div');
   card.className = 'group-card group-card--focused';
-  
+
   const header = document.createElement('div');
   header.className = 'group-card__header';
-  
+
   const titleEl = document.createElement('h2');
   titleEl.className = 'group-card__title group-card__title--editing';
   titleEl.setAttribute('contenteditable', 'plaintext-only');
-  titleEl.setAttribute('placeholder', 'New Group');
-  titleEl.textContent = 'New Group';
   titleEl.style.outline = 'none';
-  
+
   header.appendChild(titleEl);
   card.appendChild(header);
 
-  addCard.replaceWith(card);
-  
+  if (addControl) {
+    addControl.replaceWith(card);
+  } else {
+    grid.appendChild(card);
+  }
+
   titleEl.focus();
-  
-  const range = document.createRange();
-  range.selectNodeContents(titleEl);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  
+
   let isSaving = false;
-  
+
+  const cancel = () => {
+    renderPage(state.currentPage);
+  };
+
   const finish = async () => {
     if (isSaving) return;
     const name = titleEl.textContent.trim();
@@ -63,20 +74,16 @@ function startInlineGroupCreation() {
       });
       const updated = await apiFetch(withLocation(`/pages/${slug}`));
       state.currentPage = updated;
-      
+
       if (updated.groups && updated.groups.length > 0) {
         card.dataset.groupIndex = String(updated.groups.length - 1);
       }
-      
+
       renderPage(state.currentPage);
     } catch (err) {
       console.error(err);
       renderPage(state.currentPage);
     }
-  };
-
-  const cancel = () => {
-    renderPage(state.currentPage);
   };
 
   titleEl.addEventListener('keydown', async (e) => {
@@ -86,7 +93,7 @@ function startInlineGroupCreation() {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       const name = titleEl.textContent.trim();
-      if (name && name !== 'New Group') {
+      if (name) {
         const discard = await openConfirmModal();
         if (!discard) {
           titleEl.focus();
@@ -367,21 +374,89 @@ function setupPageActions(page) {
   }
 }
 
-function createAddGroupCard() {
-  const addCard = document.createElement('div');
-  addCard.className = 'group-card group-card--add';
+function createAddGroupControl() {
+  const wrap = document.createElement('div');
+  wrap.className = 'grid-add-group';
+  wrap.id = 'gridAddGroup';
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
-  addBtn.className = 'group-card__add-btn';
-  addBtn.setAttribute('aria-label', 'Add group');
-  addBtn.innerHTML = `
-    <span class="group-card__add-icon"><span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">add</span></span>
-    <span class="group-card__add-label">Add Group</span>
-  `;
-  addBtn.addEventListener('click', () => startInlineGroupCreation());
-  addCard.appendChild(addBtn);
-  return addCard;
+  addBtn.className = 'btn btn--circle grid-add-group__btn';
+  addBtn.id = 'gridAddGroupBtn';
+  addBtn.setAttribute('aria-label', 'Add group or sticky note');
+  addBtn.title = 'Add Group or Sticky Note';
+  addBtn.setAttribute('aria-expanded', 'false');
+  addBtn.setAttribute('aria-haspopup', 'menu');
+  addBtn.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">add</span>';
+
+  const menu = document.createElement('ul');
+  menu.className = 'group-card__menu grid-add-group__menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+
+  const options = [
+    { action: 'add-group', label: 'Add Group', icon: 'folder' },
+    { action: 'add-sticky', label: 'Add Sticky Note', icon: 'sticky_note' },
+  ];
+
+  for (const opt of options) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
+    btn.dataset.action = opt.action;
+    btn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: bottom;" aria-hidden="true">${opt.icon}</span>${opt.label}`;
+    li.appendChild(btn);
+    menu.appendChild(li);
+  }
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    addBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onOutsideClick);
+    document.removeEventListener('keydown', onEscape);
+  };
+
+  function onOutsideClick(e) {
+    if (!wrap.contains(e.target)) {
+      closeMenu();
+    }
+  }
+
+  function onEscape(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      addBtn.focus();
+    }
+  }
+
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!menu.hidden) {
+      closeMenu();
+      return;
+    }
+    menu.hidden = false;
+    addBtn.setAttribute('aria-expanded', 'true');
+    setTimeout(() => {
+      document.addEventListener('click', onOutsideClick);
+      document.addEventListener('keydown', onEscape);
+    }, 0);
+  });
+
+  menu.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    closeMenu();
+    startInlineGroupCreation(btn.dataset.action === 'add-sticky' ? 'sticky' : 'group');
+  });
+
+  wrap.appendChild(addBtn);
+  wrap.appendChild(menu);
+  return wrap;
 }
 
 function renderGroupCards(grid, groups) {
@@ -406,16 +481,10 @@ function renderGroupCards(grid, groups) {
   }
 }
 
-function restoreGridFocus(grid, { wasAddGroupFocused, savedGroupIndex, savedItemIndex }) {
+function restoreGridFocus(grid, { savedGroupIndex, savedItemIndex }) {
+  if (savedGroupIndex === null) return;
   const allCards = grid.querySelectorAll('.group-card');
-  if (allCards.length === 0) return;
-
-  let cardToFocus = null;
-  if (wasAddGroupFocused) {
-    cardToFocus = grid.querySelector('.group-card--add');
-  } else if (savedGroupIndex !== null) {
-    cardToFocus = Array.from(allCards).find(c => c.dataset.groupIndex === savedGroupIndex) ?? null;
-  }
+  const cardToFocus = Array.from(allCards).find(c => c.dataset.groupIndex === savedGroupIndex) ?? null;
 
   if (!cardToFocus) return;
 
@@ -435,17 +504,16 @@ function renderPageGrid(page) {
   const savedGroupIndex = focusedCard?.dataset.groupIndex ?? null;
   const focusedItem = grid.querySelector('.item--focused');
   const savedItemIndex = focusedItem?.dataset.itemIndex ?? null;
-  const wasAddGroupFocused = Boolean(focusedCard?.classList.contains('group-card--add'));
 
   grid.innerHTML = '';
 
   renderGroupCards(grid, page.groups ?? []);
 
   if (!isHelpWorkspace(state.currentLocation)) {
-    grid.appendChild(createAddGroupCard());
+    grid.appendChild(createAddGroupControl());
   }
 
-  restoreGridFocus(grid, { wasAddGroupFocused, savedGroupIndex, savedItemIndex });
+  restoreGridFocus(grid, { savedGroupIndex, savedItemIndex });
 }
 
 export function renderPage(page) {

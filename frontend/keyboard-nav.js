@@ -5,6 +5,7 @@ import { openNoteWindow, openEncryptedNoteWindow } from './notes.js';
 import { openPasswordWindow } from './password.js';
 import { openTaskWindow } from './task.js';
 import { addItemToGroup } from './groupbox.js';
+import { startInlineGroupCreation } from './content.js';
 import { openPicker } from './add-picker.js';
 import { createWhiteboardPage, printWhiteboardPage } from './whiteboard.js';
 import { createBpmnPage, printBpmnPage } from './bpmn.js';
@@ -286,7 +287,9 @@ function getSelectedGroupContext() {
 
   const originalGroupIdx = Number(groupCards[selectedGroupIdx].dataset.groupIndex);
   const selectedGroup = state.currentPage.groups[originalGroupIdx];
-  const groupName = selectedGroup?.title || `Group ${originalGroupIdx + 1}`;
+  if (!selectedGroup || selectedGroup.type === 'sticky') return null;
+
+  const groupName = selectedGroup.title || `Group ${originalGroupIdx + 1}`;
   return { originalGroupIdx, groupName };
 }
 
@@ -298,6 +301,7 @@ function buildAddActions() {
     && state.currentPage.page_type !== 'whiteboard'
     && state.currentPage.page_type !== 'bpmn'
     && Array.isArray(state.currentPage.groups);
+  const hasItemGroups = (state.currentPage?.groups ?? []).some(g => g.type !== 'sticky');
 
   if (selectedGroup) {
     const { originalGroupIdx, groupName } = selectedGroup;
@@ -310,7 +314,7 @@ function buildAddActions() {
       ...(canEncrypt ? [{ label: `Password (to ${groupName})`, value: `add_item:password:${originalGroupIdx}`, icon: 'key' }] : []),
     ];
     actions.push(...groupActions, { isDivider: true });
-  } else if (isGridPage && (state.currentPage?.groups?.length ?? 0) > 0) {
+  } else if (isGridPage && hasItemGroups) {
     const canEncrypt = canEncryptWorkspace(state.currentLocation);
     const itemActions = [
       { label: 'Link', value: 'add_item:link', icon: 'open_in_new' },
@@ -320,6 +324,14 @@ function buildAddActions() {
       ...(canEncrypt ? [{ label: 'Password', value: 'add_item:password', icon: 'key' }] : []),
     ];
     actions.push(...itemActions, { isDivider: true });
+  }
+
+  if (isGridPage) {
+    actions.push(
+      { label: 'Group', value: 'add_group:group', icon: 'folder' },
+      { label: 'Sticky Note', value: 'add_group:sticky', icon: 'sticky_note' },
+      { isDivider: true },
+    );
   }
 
   actions.push(
@@ -342,14 +354,15 @@ async function handleAddItemAction(action) {
     return;
   }
 
-  const groups = state.currentPage?.groups ?? [];
+  const groups = (state.currentPage?.groups ?? [])
+    .map((g, index) => ({ g, index }))
+    .filter(({ g }) => g.type !== 'sticky');
   if (groups.length === 0) {
-    const addBtn = document.querySelector('.group-card--add .group-card__add-btn');
-    addBtn?.click();
+    startInlineGroupCreation('group');
     return;
   }
 
-  const groupOptions = groups.map((g, i) => ({ label: g.title || `Group ${i + 1}`, value: i, icon: 'folder' }));
+  const groupOptions = groups.map(({ g, index }) => ({ label: g.title || `Group ${index + 1}`, value: index, icon: 'folder' }));
   const selectedGroupIndex = await openPicker('Select a group', groupOptions);
   if (selectedGroupIndex !== null) {
     await addItemToGroup(itemType, selectedGroupIndex, state.currentSlug, state.currentLocation);
@@ -381,6 +394,11 @@ async function handleAddShortcut() {
 
   if (action.startsWith('add_item:')) {
     await handleAddItemAction(action);
+    return;
+  }
+
+  if (action.startsWith('add_group:')) {
+    startInlineGroupCreation(action.split(':')[1]);
     return;
   }
 

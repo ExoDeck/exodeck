@@ -1,5 +1,5 @@
 // notes.js — Note items component
-import { state, apiFetch, withLocation } from './app.js';
+import { state, apiFetch, withLocation, isHelpWorkspace } from './app.js';
 import { renderMarkdownToElement, updateMarkdownCheckbox } from './markdown-utils.js';
 import { promptUnlockVault } from './vault.js';
 import { decodeNote, encodeNote, openGridNoteView } from './note.js';
@@ -121,12 +121,16 @@ function renderGenericNoteItem({ isEncrypted, item, itemIndex, groupIndex, slug,
     }
   };
 
+  const readOnly = isHelpWorkspace(location);
+
   titleBtn.addEventListener('click', () => { void handleOpenWindow('view'); });
   editBtn.addEventListener('click', () => { void handleOpenWindow('edit'); });
 
   noteHeader.appendChild(iconBtn);
   noteHeader.appendChild(titleBtn);
-  noteHeader.appendChild(editBtn);
+  if (!readOnly) {
+    noteHeader.appendChild(editBtn);
+  }
   li.appendChild(noteHeader);
 
   const handleUnlockAndClick = async () => {
@@ -156,6 +160,10 @@ function renderGenericNoteItem({ isEncrypted, item, itemIndex, groupIndex, slug,
     li.appendChild(body);
     body.addEventListener('change', (e) => {
       if (!e.target.classList.contains('task-list-checkbox')) return;
+      if (readOnly) {
+        e.target.checked = !e.target.checked;
+        return;
+      }
       const checkboxes = Array.from(body.querySelectorAll('.task-list-checkbox'));
       const idx = checkboxes.indexOf(e.target);
       if (idx === -1) return;

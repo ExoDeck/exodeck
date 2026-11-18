@@ -284,6 +284,9 @@ func (s *Server) addGroup(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &group) {
 		return
 	}
+	if group.Items == nil {
+		group.Items = []models.Item{}
+	}
 
 	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)
 	if status != 0 {
@@ -323,6 +326,9 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 	var group models.Group
 	if !decodeJSON(w, r, &group) {
 		return
+	}
+	if group.Items == nil {
+		group.Items = []models.Item{}
 	}
 
 	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)

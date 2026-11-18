@@ -335,7 +335,7 @@ function _attachItemDragEvents() {
 // ---------------------------------------------------------------------------
 
 function _attachGroupDropZones() {
-  const cards = document.querySelectorAll('.group-card:not(.group-card--add)');
+  const cards = document.querySelectorAll('.group-card:not(.group-card--add):not(.group-card--sticky)');
   for (const card of cards) {
     const list = card.querySelector('.group-card__items');
 

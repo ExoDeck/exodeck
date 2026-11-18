@@ -138,15 +138,11 @@ A sample configuration ([`config.json.example`](config.json.example)):
 
 ## Documentation
 
-ExoDeck includes complete built-in documentation accessible directly inside the application via the **Docs** workspace (or by clicking the `?` icon in the sidebar):
+ExoDeck includes complete built-in documentation embedded in `docs/help.grid` and accessible directly inside the application via the **ExoDeck** Help workspace (`☰ → Help`):
 
-- [About & First Run](docs/About.md)
-- [Page Types (`.grid`, `.md`, `.excalidraw`, `.bpmn`)](docs/Page-Types.md)
-- [Password Vault & Encryption](docs/Password-Vault.md)
-- [Keyboard Shortcuts](docs/Keyboard-Shortcuts.md)
-- [Using Markdown](docs/Using-Markdown.md)
-- [MCP Server Integration](docs/MCP-Server.md)
-- [License](docs/License.md)
+- **Getting Started**: *What is ExoDeck?*, *Workspaces & Basic Concepts*, *Navigation & Menus*
+- **Features & Guides**: *Page Types (`.grid`, `.md`, `.excalidraw`, `.bpmn`)*, *Using Markdown*, *Keyboard Shortcuts*
+- **Security, AI & License**: *Password Vault & Encryption*, *MCP Server Integration*, *MIT License*
 
 ---
 

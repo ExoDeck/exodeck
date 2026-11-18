@@ -80,7 +80,7 @@
 
 - All go unit test passing
 - All linters passing
-- docs are updated (e.g. when new shortcuts are added update Keyboard-Shortcuts.md)
+- docs are updated (e.g. when new shortcuts are added update docs/help.grid)
 
 ---
 

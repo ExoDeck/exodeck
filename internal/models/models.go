@@ -38,10 +38,13 @@ func (it *Item) ItemType() string {
 	return "note"
 }
 
-// Group is a named collection of items.
+// Group is a named collection of items or a sticky note on a grid page.
 type Group struct {
-	Title string `json:"title"`
-	Items []Item `json:"items"`
+	Title string  `json:"title"`
+	Type  *string `json:"type,omitempty"`
+	Text  *string `json:"text,omitempty"`
+	Color *string `json:"color,omitempty"`
+	Items []Item  `json:"items"`
 }
 
 // Page is the top-level document stored as one JSON file in the data directory.

@@ -322,3 +322,72 @@ func TestGroupErrorBranches(t *testing.T) {
 		t.Errorf("expected 423 for updateGroup with sensitive item when locked, got %d", code)
 	}
 }
+
+func TestStickyNoteGroupCRUD(t *testing.T) {
+	ts, store, _ := newTestServer(t)
+
+	if status, errMsg := store.WritePage("my-page", models.Page{PageName: "My Page", Groups: []models.Group{}}, ""); status != 0 {
+		t.Fatalf("seed page failed (%d): %s", status, errMsg)
+	}
+
+	stickyType := "sticky"
+	text := "Hello **world**"
+	yellow := "yellow"
+
+	// Create sticky note group (with nil Items)
+	sticky := models.Group{
+		Title: "Quick Note",
+		Type:  &stickyType,
+		Text:  &text,
+		Color: &yellow,
+	}
+	code, body := post(t, ts, "/api/v1/pages/my-page/groups", sticky)
+	if code != http.StatusCreated {
+		t.Fatalf("POST sticky group: %d %v", code, body)
+	}
+
+	// Verify persisted via GET page
+	code, pageBody := get(t, ts, "/api/v1/pages/my-page")
+	if code != http.StatusOK {
+		t.Fatalf("GET page: %d %v", code, pageBody)
+	}
+	groups, _ := pageBody["groups"].([]interface{})
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	gotGroup, _ := groups[0].(map[string]interface{})
+	if gotGroup["type"] != "sticky" || gotGroup["text"] != text || gotGroup["color"] != "yellow" {
+		t.Fatalf("unexpected sticky group on GET: %v", gotGroup)
+	}
+	if _, ok := gotGroup["items"].([]interface{}); !ok {
+		t.Errorf("expected items to be empty array, got %T (%v)", gotGroup["items"], gotGroup["items"])
+	}
+
+	// Update sticky note text and color
+	updatedText := "Updated **sticky**"
+	blue := "blue"
+	updatedSticky := models.Group{
+		Title: "Renamed Sticky",
+		Type:  &stickyType,
+		Text:  &updatedText,
+		Color: &blue,
+	}
+	code, putBody := put(t, ts, "/api/v1/pages/my-page/groups/0", updatedSticky)
+	if code != http.StatusOK {
+		t.Fatalf("PUT sticky group: %d %v", code, putBody)
+	}
+	if putBody["color"] != "blue" || putBody["text"] != updatedText || putBody["title"] != "Renamed Sticky" {
+		t.Errorf("unexpected PUT response: %v", putBody)
+	}
+
+	// Re-read page to verify persistence
+	code, pageBody = get(t, ts, "/api/v1/pages/my-page")
+	if code != http.StatusOK {
+		t.Fatalf("GET page after update: %d", code)
+	}
+	groups, _ = pageBody["groups"].([]interface{})
+	gotGroup, _ = groups[0].(map[string]interface{})
+	if gotGroup["type"] != "sticky" || gotGroup["text"] != updatedText || gotGroup["color"] != "blue" || gotGroup["title"] != "Renamed Sticky" {
+		t.Errorf("unexpected persisted sticky group after PUT: %v", gotGroup)
+	}
+}
