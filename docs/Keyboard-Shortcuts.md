@@ -9,21 +9,21 @@ ExoDeck is designed for speed and efficiency, offering comprehensive keyboard na
 | **`/`** | Open the global navigation overlay (search/filter pages and items) |
 | **`.`** | Open / toggle the floating navigator overlay |
 | **`#`** | Open the workspace selection overlay |
-| **`s`** | Open / close the document outline sidebar (on Note pages) |
-| **`e`** | Edit the current page |
+| **`s`** | Open / close the document outline sidebar (on Note pages and full-screen Grid Notes) |
+| **`e`** | Edit the current page or full-screen Grid Note |
 | **`Ctrl` + `s`** / **`Cmd` + `s`** | Save changes (when in edit mode) |
 | **`+`** | Open the "Add ..." picker to add a new page or item |
 | **`g`** | Create a new Grid page |
-| **`o`** | Toggle the document outline sidebar (on Note pages) |
-| **`O`** (`Shift` + `o`) | Open the headings search overlay (on Note pages) |
+| **`o`** | Toggle the document outline sidebar (on Note pages and full-screen Grid Notes) |
+| **`O`** (`Shift` + `o`) | Open the headings search overlay (on Note pages and full-screen Grid Notes) |
 | **`x`** | Collapse / expand all sections in the sidebar or outline |
 | **`q`** | Create a new Note page |
 | **`w`** | Create a new Whiteboard page |
 | **`b`** | Create a new Business Process page |
-| **`p`** | Print the current Note, Whiteboard, or Business Process page |
+| **`p`** | Print the current Note, full-screen Grid Note, Whiteboard, or Business Process page |
 | **`n`** | Open / toggle the notifications dropdown |
 | **`t`** | Open / toggle the tasks panel (all workspaces) |
-| **`Esc`** | Close modal dialogs, floating navigator, search overlay, or cancel edit mode |
+| **`Esc`** | Close modal dialogs, floating navigator, search overlay, cancel edit mode, or return to the Grid page from a full-screen Grid Note |
 
 ## Floating Navigator
 
@@ -44,8 +44,8 @@ ExoDeck is designed for speed and efficiency, offering comprehensive keyboard na
 
 | Shortcut | Action |
 | :--- | :--- |
-| **`o`** | Focus document outline (or open/close on Note pages) |
-| **`s`** | Open / close document outline sidebar (on Note pages) |
+| **`o`** | Focus document outline (or open/close on Note pages and full-screen Grid Notes) |
+| **`s`** | Open / close document outline sidebar (on Note pages and full-screen Grid Notes) |
 | **`ArrowDown`** / **`ArrowUp`** | Move selection between visible headings and sections |
 | **`ArrowRight`** | Expand section branch / navigate into sub-headings |
 | **`ArrowLeft`** | Collapse section branch / navigate to parent section |

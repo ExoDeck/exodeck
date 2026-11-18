@@ -9,10 +9,13 @@ The default page type is a structured grid designed to organize various types of
 - You can create **Groups** within a Grid page to categorize your items.
 - Inside each Group, you can add different types of **Items**:
   - **Link**: A standard URL bookmark.
-  - **Note**: A small, inline Markdown text snippet.
+  - **Note**: A Markdown note item.
+    - Clicking its icon toggles a compact inline preview on the card.
+    - Clicking its title or edit icon (`✎`) opens the note full-screen with all Note Page features (split-pane editor, document outline, interactive checklists, editable tables, Mermaid diagrams, image uploads, and printing) and a breadcrumb header (`Workspace > Grid Name > Group Name > Note Name`).
+    - Clicking the Grid Name or Group Name breadcrumb (or pressing `Esc`) returns to the Grid page.
   - **Task**: An actionable item with a checkbox and an optional due date. Overdue and due-soon tasks across visible workspaces are aggregated and surfaced via the notification bell in the top header.
   - **Password**: Securely store credentials with username, password, URL, notes, and optional TOTP authenticator. Includes a built-in password generator and entropy meter.
-  - **Encrypted Note**: A Markdown note that is securely encrypted.
+  - **Encrypted Note**: A Markdown note that is securely encrypted and opens full-screen using the same Note Page viewer and editor once unlocked.
 - **Security & Vault**: To use **Password** and **Encrypted Note** items, enable the **Master Password Vault** for your workspace in Settings (⚙ -> Workspaces).
   - Employs KeePass-grade cryptography: **Argon2id** key derivation and **AES-256-GCM** authenticated encryption.
   - Credentials and sensitive notes are locked by default and masked until unlocked with your Master Password.

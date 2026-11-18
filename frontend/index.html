@@ -34,31 +34,87 @@
           <span class="notification-badge" id="notificationBadge" aria-hidden="true"></span>
         </button>
 
-        <!-- Workspace Breadcrumb Button (Round left, pointed right C[icon] Name >) -->
-        <button type="button" class="workspace-btn" id="workspaceHeader" title="Workspace Navigator (.)">
-          <span class="workspace-btn__logo">
-            <svg id="defaultLogo" class="sidebar__logo" width="20" height="20" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <g transform="rotate(-45 64 64)">
-              <circle cx="64" cy="64" r="22" stroke="currentColor" stroke-width="8"/>
-              <rect x="51" y="14" width="26" height="34" rx="6" fill="#00E5FF"/>
-              <rect x="51" y="80" width="26" height="34" rx="6" fill="currentColor"/>
-              <rect x="14" y="51" width="34" height="26" rx="6" fill="#00E5FF"/>
-              <rect x="80" y="51" width="34" height="26" rx="6" fill="currentColor"/>
-              <circle cx="64" cy="64" r="7" fill="#00E5FF"/>
-              </g>
+        <!-- Breadcrumb Navigation Pills ([Icon Workspace] > [Grid] > [Group] > [Page/Note]) -->
+        <div class="header-breadcrumbs" id="headerBreadcrumbs">
+          <button type="button" class="header-crumb header-crumb--1 workspace-btn" id="workspaceHeader" title="Switch Workspace (#)">
+            <svg class="header-crumb__cap-left" viewBox="0 0 18 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 19 0 L 18 0 A 18 18 0 0 0 18 36 L 19 36 Z" />
+              <path class="header-crumb__stroke" d="M 19 0.5 L 18 0.5 A 17.5 17.5 0 0 0 18 35.5 L 19 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
             </svg>
-            <img id="customWorkspaceLogo" class="sidebar__logo" style="display: none; width: 20px; height: 20px; object-fit: contain;" alt="Workspace Icon" />
-          </span>
-          <span id="currentWorkspaceName" class="workspace-btn__name"></span>
-          <span id="workspaceGitDot" class="git-dot" title="Git Status (Click to Sync)"></span>
-          <svg class="workspace-btn__arrow" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
-            <path class="workspace-btn__arrow-fill" d="M -1 0 L 0 0 L 11.4 18 L 0 36 L -1 36 Z" />
-            <path class="workspace-btn__arrow-stroke" d="M -1 0.5 L 0 0.5 L 10.5 18 L 0 35.5 L -1 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
-          </svg>
-        </button>
+            <svg class="header-crumb__mid" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 0 0 L 100 0 L 100 36 L 0 36 Z" />
+              <path class="header-crumb__stroke" d="M 0 0.5 L 100 0.5 M 0 35.5 L 100 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <span class="workspace-btn__logo">
+              <svg id="defaultLogo" class="sidebar__logo" width="20" height="20" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <g transform="rotate(-45 64 64)">
+                <circle cx="64" cy="64" r="22" stroke="currentColor" stroke-width="8"/>
+                <rect x="51" y="14" width="26" height="34" rx="6" fill="#00E5FF"/>
+                <rect x="51" y="80" width="26" height="34" rx="6" fill="currentColor"/>
+                <rect x="14" y="51" width="34" height="26" rx="6" fill="#00E5FF"/>
+                <rect x="80" y="51" width="34" height="26" rx="6" fill="currentColor"/>
+                <circle cx="64" cy="64" r="7" fill="#00E5FF"/>
+                </g>
+              </svg>
+              <img id="customWorkspaceLogo" class="sidebar__logo" style="display: none; width: 20px; height: 20px; object-fit: contain;" alt="Workspace Icon" />
+            </span>
+            <span id="currentWorkspaceName" class="workspace-btn__name"></span>
+            <span id="workspaceGitDot" class="git-dot" title="Git Status (Click to Sync)"></span>
+            <svg class="workspace-btn__arrow header-crumb__arrow" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="workspace-btn__arrow-fill header-crumb__fill" d="M -1 0 L 0 0 L 11.4 18 L 0 36 L -1 36 Z" />
+              <path class="workspace-btn__arrow-stroke header-crumb__stroke" d="M -1 0.5 L 0 0.5 L 10.5 18 L 0 35.5 L -1 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+          </button>
 
-        <!-- Page title directly adjacent to pointed button -->
-        <h1 class="content__title app-header__title" id="pageTitle" aria-live="polite"><span class="sr-only">Page title</span></h1>
+          <button type="button" class="header-crumb header-crumb--2 header-crumb--intermediate" id="gridPageCrumb" title="Back to Grid Page (Esc)" hidden>
+            <svg class="header-crumb__tail" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 13 0 L 0 0 L 10.8 18 L 0 36 L 13 36 Z" />
+              <path class="header-crumb__stroke" d="M 13 0.5 L 0.8 0.5 L 11.4 18 L 0.8 35.5 L 13 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <svg class="header-crumb__mid" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 0 0 L 100 0 L 100 36 L 0 36 Z" />
+              <path class="header-crumb__stroke" d="M 0 0.5 L 100 0.5 M 0 35.5 L 100 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <span class="header-crumb__label" id="gridPageCrumbLabel"></span>
+            <svg class="header-crumb__arrow" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M -1 0 L 0 0 L 11.4 18 L 0 36 L -1 36 Z" />
+              <path class="header-crumb__stroke" d="M -1 0.5 L 0 0.5 L 10.5 18 L 0 35.5 L -1 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+          </button>
+
+          <button type="button" class="header-crumb header-crumb--3 header-crumb--intermediate" id="gridGroupCrumb" title="Back to Grid Group (Esc)" hidden>
+            <svg class="header-crumb__tail" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 13 0 L 0 0 L 10.8 18 L 0 36 L 13 36 Z" />
+              <path class="header-crumb__stroke" d="M 13 0.5 L 0.8 0.5 L 11.4 18 L 0.8 35.5 L 13 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <svg class="header-crumb__mid" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 0 0 L 100 0 L 100 36 L 0 36 Z" />
+              <path class="header-crumb__stroke" d="M 0 0.5 L 100 0.5 M 0 35.5 L 100 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <span class="header-crumb__label" id="gridGroupCrumbLabel"></span>
+            <svg class="header-crumb__arrow" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M -1 0 L 0 0 L 11.4 18 L 0 36 L -1 36 Z" />
+              <path class="header-crumb__stroke" d="M -1 0.5 L 0 0.5 L 10.5 18 L 0 35.5 L -1 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+          </button>
+
+          <div class="header-crumb header-crumb--2 header-crumb--last" id="pageTitleCrumb" role="button" tabindex="0" title="Page Navigator (.)">
+            <svg class="header-crumb__tail" viewBox="0 0 12 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 13 0 L 0 0 L 10.8 18 L 0 36 L 13 36 Z" />
+              <path class="header-crumb__stroke" d="M 13 0.5 L 0.8 0.5 L 11.4 18 L 0.8 35.5 L 13 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <svg class="header-crumb__mid" viewBox="0 0 100 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M 0 0 L 100 0 L 100 36 L 0 36 Z" />
+              <path class="header-crumb__stroke" d="M 0 0.5 L 100 0.5 M 0 35.5 L 100 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <svg class="header-crumb__cap-right" viewBox="0 0 18 36" preserveAspectRatio="none" aria-hidden="true">
+              <path class="header-crumb__fill" d="M -1 0 L 0 0 A 18 18 0 0 1 0 36 L -1 36 Z" />
+              <path class="header-crumb__stroke" d="M -1 0.5 L 0 0.5 A 17.5 17.5 0 0 1 0 35.5 L -1 35.5" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" />
+            </svg>
+            <span class="header-crumb__lock material-symbols-outlined" id="pageTitleLockIcon" style="font-size: 16px;" aria-hidden="true" hidden>lock</span>
+            <h1 class="content__title app-header__title" id="pageTitle" aria-live="polite"><span class="sr-only">Page title</span></h1>
+          </div>
+        </div>
       </div>
 
       <div class="app-header__right">

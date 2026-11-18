@@ -8,7 +8,8 @@ import { addItemToGroup } from './groupbox.js';
 import { openPicker } from './add-picker.js';
 import { createWhiteboardPage, printWhiteboardPage } from './whiteboard.js';
 import { createBpmnPage, printBpmnPage } from './bpmn.js';
-import { printNotePage } from './note.js';
+import { printActiveNote, closeActiveGridNote } from './note.js';
+import { isOutlineFocused } from './outline-nav.js';
 import { canEncryptWorkspace, fetchVaultStatus } from './vault.js';
 import { toggleNotificationPanel, toggleTasksPanel } from './notifications.js';
 
@@ -487,8 +488,9 @@ function handleBKeydown(e) {
 function handlePKeydown(e) {
   if (e.ctrlKey || e.altKey || e.metaKey || isTypingContext(e.target) || isOverlayActive()) return;
 
+  const isGridNote = Boolean(state.activeGridNote);
   const pageType = state.currentPage?.page_type;
-  if (pageType !== 'note' && pageType !== 'whiteboard' && pageType !== 'bpmn') return;
+  if (!isGridNote && pageType !== 'note' && pageType !== 'whiteboard' && pageType !== 'bpmn') return;
 
   const isEditing = document.getElementById('mdEditorContainer')
     || document.getElementById('wbEditorContainer')
@@ -497,7 +499,7 @@ function handlePKeydown(e) {
 
   e.preventDefault();
   let fn;
-  if (pageType === 'note') fn = printNotePage;
+  if (isGridNote || pageType === 'note') fn = printActiveNote;
   else if (pageType === 'whiteboard') fn = printWhiteboardPage;
   else if (pageType === 'bpmn') fn = printBpmnPage;
   fn?.(state.currentSlug, state.currentLocation).catch(console.error);
@@ -531,7 +533,7 @@ function handleTKeydown(e) {
 
 function isGridNavigable(e) {
   const pageType = state.currentPage?.page_type;
-  if (!state.currentPage || pageType === 'note' || pageType === 'whiteboard' || pageType === 'bpmn') {
+  if (!state.currentPage || Boolean(state.activeGridNote) || pageType === 'note' || pageType === 'whiteboard' || pageType === 'bpmn') {
     return false;
   }
   return !isTypingContext(e.target) && !isOverlayActive() && !document.querySelector('.group-card__menu:not([hidden])');
@@ -644,10 +646,21 @@ function handleGridNavigation(e) {
 }
 
 function handleEscapeKeydown(e) {
-  if (!isTypingContext(e.target) && !isOverlayActive()) {
-    const focusedCards = document.querySelectorAll('.group-card--focused, .item--focused');
-    focusedCards.forEach(el => el.classList.remove('group-card--focused', 'item--focused'));
+  if (isTypingContext(e.target) || isOverlayActive()) return;
+  if (
+    state.activeGridNote &&
+    !state.activeGridNote.isEditing &&
+    !document.querySelector('.add-page-menu--open') &&
+    !document.querySelector('.md-table-editing') &&
+    !document.body.classList.contains('mermaid-viewer-open') &&
+    !isOutlineFocused()
+  ) {
+    e.preventDefault();
+    void closeActiveGridNote();
+    return;
   }
+  const focusedCards = document.querySelectorAll('.group-card--focused, .item--focused');
+  focusedCards.forEach(el => el.classList.remove('group-card--focused', 'item--focused'));
 }
 
 const keyHandlers = {

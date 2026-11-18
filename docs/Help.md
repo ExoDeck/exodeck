@@ -43,7 +43,7 @@ ExoDeck provides several fast ways to navigate between pages:
 
 ### 3. Floating Navigator (`.`)
 
-- Press the period (**`.`**) key to open the compact floating navigator palette.
+- Press the period (**`.`**) key or click the **Page Name** pill in the top header breadcrumb bar to open the compact floating navigator palette.
 - Navigate the full page tree using `ArrowUp` / `ArrowDown`, expand or collapse folders with `ArrowRight` / `ArrowLeft`, or switch workspaces with `Home` and arrow keys.
 - Press `Enter` to open a page in the current tab, or `Ctrl` + `Enter` (`Cmd` + `Enter` on macOS) to open it in a new browser tab.
 
@@ -98,12 +98,12 @@ Workspaces can also be declared directly in `config.json` (located at `~/.exodec
 
 When you have multiple workspaces configured, switching between them is instantaneous:
 
-1. **Workspace Header Bar**: Click any workspace name in the header list displayed at the top of the left sidebar.
+1. **Workspace Breadcrumb Pill**: Click the **Workspace** pill on the left side of the top header bar to open the Workspace Switcher popup.
 2. **Workspace Switcher Overlay (`#`)**:
    - Press the hash (**`#`**) key anywhere in the app to open the dedicated workspace switcher popup.
    - Type to filter your workspaces in real-time, then press `Enter` to jump directly to it.
 3. **Floating Navigator Header (`.`)**:
-   - Open the floating navigator with **`.`**.
+   - Open the floating navigator with **`.`** or by clicking the **Page Name** pill in the top header.
    - Click the workspace icon tabs across the top, or use `ArrowLeft` / `ArrowRight` while the header is focused to cycle between workspaces.
 4. **Hamburger Menu**:
    - Open **☰** and click **Switch Workspace (`#`)**.

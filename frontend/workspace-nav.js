@@ -1,6 +1,7 @@
 // workspace-nav.js — Workspace navigation overlay
 import { state, isHelpWorkspace } from './app.js';
-import { loadPage, renderPageList, getWorkspaceList, closeFloatingNavigator } from './sidebar.js';
+import { loadPage, renderPageList, getWorkspaceList, closeFloatingNavigator, setHeaderBreadcrumbs } from './sidebar.js';
+import { cleanupActiveNoteEditor } from './note.js';
 
 // ---------------------------------------------------------------------------
 // DOM references (populated after DOMContentLoaded in initWorkspaceNav)
@@ -147,7 +148,7 @@ function positionWorkspaceNav() {
 
   let left = 48;
   let top = 54;
-  const anchorEl = document.getElementById('hamburgerBtn') || document.getElementById('workspaceHeader');
+  const anchorEl = document.getElementById('workspaceHeader') || document.getElementById('hamburgerBtn');
   if (anchorEl) {
     const rect = anchorEl.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
@@ -167,6 +168,10 @@ function positionWorkspaceNav() {
   dialog.style.maxHeight = `calc(100vh - ${top + 16}px)`;
 }
 
+export function isWorkspaceNavOpen() {
+  return Boolean(_docKeyHandler);
+}
+
 export function openWorkspaceNav() {
   if (_docKeyHandler) return; // already open
   
@@ -174,6 +179,7 @@ export function openWorkspaceNav() {
   currentWorkspaces = getWorkspaceList();
 
   workspaceNavEl.removeAttribute('hidden');
+  document.getElementById('workspaceHeader')?.classList.add('workspace-btn--active');
   positionWorkspaceNav();
   workspaceNavInput.value = '';
   renderWorkspaceResults('');
@@ -204,6 +210,7 @@ export function openWorkspaceNav() {
 
 export function closeWorkspaceNav() {
   workspaceNavEl.setAttribute('hidden', '');
+  document.getElementById('workspaceHeader')?.classList.remove('workspace-btn--active');
   workspaceNavInput.value = '';
   workspaceNavResults.innerHTML = '';
   activeIndex = -1;
@@ -212,6 +219,14 @@ export function closeWorkspaceNav() {
   if (_docKeyHandler) {
     document.removeEventListener('keydown', _docKeyHandler);
     _docKeyHandler = null;
+  }
+}
+
+export function toggleWorkspaceNav() {
+  if (isWorkspaceNavOpen()) {
+    closeWorkspaceNav();
+  } else {
+    openWorkspaceNav();
   }
 }
 
@@ -235,6 +250,9 @@ async function handleResultClick(li) {
     await loadPage(pagesInLoc[0].slug, location);
   } else {
     // If empty workspace, just update URL and clear content
+    cleanupActiveNoteEditor();
+    state.activeGridNote = null;
+    setHeaderBreadcrumbs(null);
     window.history.pushState({ location }, '', `/${encodeURIComponent(location)}`);
     document.getElementById('pageTitle').textContent = '';
     document.getElementById('pageGrid').innerHTML = '';

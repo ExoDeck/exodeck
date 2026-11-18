@@ -69,9 +69,9 @@ Workspaces can be configured via the web interface or in `config.json`:
 #### Using Workspaces
 
 - **Switching**:
-  - Click any workspace name in the header strip at the top of the sidebar.
+  - Click the **Workspace** pill in the top header breadcrumb bar to open the Workspace Switcher popup.
   - Press the **`#`** shortcut key anywhere to open the quick Workspace Switcher popup, filter by name, and press `Enter`.
-  - Open the floating navigator (**`.`**) and click a workspace icon or press `ArrowRight` / `ArrowLeft`.
+  - Open the floating navigator (**`.`** or by clicking the **Page Name** pill) and click a workspace icon or press `ArrowRight` / `ArrowLeft`.
 - **Creating Pages**:
   - When a workspace is active, create pages inside it using the hamburger menu (**☰**) or single-key shortcuts:
     - **`g`**: New Grid dashboard page

@@ -44,6 +44,27 @@
   --color-warning: #f59e0b;
   --color-folder-view: #a78bfa;
 
+  /* Header Breadcrumb Progression (Dark Theme — single blue getting lighter) */
+  --crumb-1-bg: #171c2b;
+  --crumb-1-border: #22293e;
+  --crumb-1-hover-bg: color-mix(in srgb, var(--color-accent) 22%, #171c2b);
+  --crumb-1-hover-border: var(--color-accent);
+
+  --crumb-2-bg: #1d2740;
+  --crumb-2-border: #293759;
+  --crumb-2-hover-bg: color-mix(in srgb, var(--color-accent) 22%, #1d2740);
+  --crumb-2-hover-border: var(--color-accent);
+
+  --crumb-3-bg: #243458;
+  --crumb-3-border: #324776;
+  --crumb-3-hover-bg: color-mix(in srgb, var(--color-accent) 22%, #243458);
+  --crumb-3-hover-border: var(--color-accent);
+
+  --crumb-4-bg: #2c4270;
+  --crumb-4-border: #3d5a96;
+  --crumb-4-hover-bg: color-mix(in srgb, var(--color-accent) 22%, #2c4270);
+  --crumb-4-hover-border: var(--color-accent);
+
   /* Spacing */
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
@@ -85,6 +106,27 @@
   --color-accent-hover: #2f4ac4;
   --color-warning: #b45309;
   --color-folder-view: #7c3aed;
+
+  /* Header Breadcrumb Progression (Light Theme — single blue getting lighter) */
+  --crumb-1-bg: #cad6f2;
+  --crumb-1-border: #b9c7e8;
+  --crumb-1-hover-bg: color-mix(in srgb, var(--color-accent) 18%, #cad6f2);
+  --crumb-1-hover-border: var(--color-accent);
+
+  --crumb-2-bg: #d6e1f7;
+  --crumb-2-border: #c5d3ef;
+  --crumb-2-hover-bg: color-mix(in srgb, var(--color-accent) 18%, #d6e1f7);
+  --crumb-2-hover-border: var(--color-accent);
+
+  --crumb-3-bg: #e3ebfb;
+  --crumb-3-border: #d2def5;
+  --crumb-3-hover-bg: color-mix(in srgb, var(--color-accent) 18%, #e3ebfb);
+  --crumb-3-hover-border: var(--color-accent);
+
+  --crumb-4-bg: #eff4fd;
+  --crumb-4-border: #dfe8f9;
+  --crumb-4-hover-bg: color-mix(in srgb, var(--color-accent) 18%, #eff4fd);
+  --crumb-4-hover-border: var(--color-accent);
 }
 
 /* ============================================================
@@ -203,9 +245,8 @@ a:hover {
   margin: 0;
   padding: 6px 16px;
   min-height: 48px;
-  background-color: var(--color-surface);
+  background-color: var(--color-bg);
   border: none;
-  border-bottom: 1px solid var(--color-border);
   border-radius: 0;
   z-index: 100;
   flex-shrink: 0;
@@ -629,44 +670,171 @@ a:hover {
 }
 
 /* ============================================================
-   Workspace Breadcrumb Button (Round left, pointed right C[icon] Name >)
+   Header Chevron Breadcrumbs ([Icon Workspace] > [Grid] > [Group] > [Page/Note])
    ============================================================ */
-.workspace-btn {
-  --ws-btn-bg: var(--color-surface-2);
-  --ws-btn-border: var(--color-border);
+.header-breadcrumbs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.32));
+}
+
+[data-theme="light"] .header-breadcrumbs {
+  filter: drop-shadow(0 1px 3px rgba(15, 23, 42, 0.08));
+}
+
+.header-crumb {
+  --ws-btn-bg: var(--crumb-1-bg);
+  --ws-btn-border: var(--crumb-1-border);
+  --ws-btn-text: var(--color-text);
+  --ws-btn-hover-bg: var(--crumb-1-hover-bg);
+  --ws-btn-hover-border: var(--crumb-1-hover-border);
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 36px;
   box-sizing: border-box;
-  padding: 0 6px 0 14px;
-  margin-right: 24px;
-  border-radius: 18px 0 0 18px;
-  background-color: var(--ws-btn-bg);
-  border: 1px solid var(--ws-btn-border);
-  border-right: none;
+  background: none;
+  border: none;
+  color: var(--ws-btn-text);
+  font-family: var(--font-sans);
   cursor: pointer;
   user-select: none;
-  transition: background-color var(--transition), border-color var(--transition), filter var(--transition);
-  flex-shrink: 0;
+  transition: color var(--transition), filter var(--transition);
 }
 
+.header-crumb--1 {
+  --ws-btn-bg: var(--crumb-1-bg);
+  --ws-btn-border: var(--crumb-1-border);
+  --ws-btn-hover-bg: var(--crumb-1-hover-bg);
+  --ws-btn-hover-border: var(--crumb-1-hover-border);
+  padding: 0 8px 0 14px;
+  margin-right: 0;
+  border-radius: 18px 0 0 18px;
+  flex-shrink: 1;
+  min-width: 58px;
+}
+
+.header-crumb--2 {
+  --ws-btn-bg: var(--crumb-2-bg);
+  --ws-btn-border: var(--crumb-2-border);
+  --ws-btn-hover-bg: var(--crumb-2-hover-bg);
+  --ws-btn-hover-border: var(--crumb-2-hover-border);
+}
+
+.header-crumb--3 {
+  --ws-btn-bg: var(--crumb-3-bg);
+  --ws-btn-border: var(--crumb-3-border);
+  --ws-btn-hover-bg: var(--crumb-3-hover-bg);
+  --ws-btn-hover-border: var(--crumb-3-hover-border);
+}
+
+.header-crumb--4 {
+  --ws-btn-bg: var(--crumb-4-bg);
+  --ws-btn-border: var(--crumb-4-border);
+  --ws-btn-hover-bg: var(--crumb-4-hover-bg);
+  --ws-btn-hover-border: var(--crumb-4-hover-border);
+}
+
+.header-crumb--intermediate {
+  --ws-btn-text: color-mix(in srgb, var(--color-text) 85%, transparent);
+  margin-left: 17px;
+  padding: 0 10px 0 15px;
+  border-radius: 0;
+  justify-content: center;
+  flex-shrink: 1;
+  min-width: 44px;
+  max-width: 220px;
+}
+
+.header-crumb--last {
+  --ws-btn-text: var(--color-text);
+  margin-left: 17px;
+  padding: 0 18px 0 15px;
+  border-radius: 0 18px 18px 0;
+  flex: 0 1 auto;
+  min-width: 44px;
+  max-width: 100%;
+}
+
+.header-crumb__cap-left {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 18px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.header-crumb__cap-right {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 18px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.header-crumb__mid {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.header-crumb--1 .header-crumb__mid {
+  left: 18px;
+  right: 0;
+  width: calc(100% - 18px);
+}
+
+.header-crumb--intermediate .header-crumb__mid {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.header-crumb--last .header-crumb__mid {
+  left: 0;
+  right: 18px;
+  width: calc(100% - 18px);
+}
+
+.header-crumb__tail {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  width: 12px;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.header-crumb__arrow,
 .workspace-btn__arrow {
   position: absolute;
   left: 100%;
-  top: -1px;
+  top: 0;
   width: 12px;
-  height: 36px;
+  height: 100%;
   overflow: visible;
   pointer-events: none;
+  z-index: 0;
 }
 
+.header-crumb__fill,
 .workspace-btn__arrow-fill {
   fill: var(--ws-btn-bg);
   transition: fill var(--transition);
 }
 
+.header-crumb__stroke,
 .workspace-btn__arrow-stroke {
   stroke: var(--ws-btn-border);
   stroke-linecap: square;
@@ -675,49 +843,74 @@ a:hover {
   transition: stroke var(--transition);
 }
 
-[data-theme="light"] .workspace-btn {
-  --ws-btn-bg: #e2e6f0;
-  --ws-btn-border: #ccd0dd;
-}
-
-.workspace-btn:hover,
+.header-crumb:not(.header-crumb--static):not(:has(.content__title--editing)):hover,
+.header-crumb--active,
 .workspace-btn--active {
-  --ws-btn-bg: color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-2));
-  --ws-btn-border: var(--color-accent);
+  --ws-btn-bg: var(--ws-btn-hover-bg);
+  --ws-btn-border: var(--ws-btn-hover-border);
+  --ws-btn-text: var(--color-text);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--ws-btn-border) 38%, transparent));
 }
 
-[data-theme="light"] .workspace-btn:hover,
-[data-theme="light"] .workspace-btn--active {
-  --ws-btn-bg: color-mix(in srgb, var(--color-accent) 18%, #e2e6f0);
-  --ws-btn-border: var(--color-accent);
-}
-
-.workspace-btn:focus-visible {
+.header-crumb:not(.header-crumb--static):focus-visible {
   outline: none;
-  --ws-btn-border: var(--color-accent);
-  filter: drop-shadow(0 0 5px rgba(108, 142, 245, 0.45));
+  --ws-btn-border: var(--ws-btn-hover-border);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--ws-btn-border) 50%, transparent));
 }
 
-.workspace-btn--active {
-  filter: drop-shadow(0 0 6px rgba(108, 142, 245, 0.45));
+.header-crumb--static:not(:has(.content__title--editing)) {
+  cursor: default;
 }
 
-[data-theme="light"] .workspace-btn--active {
-  filter: drop-shadow(0 0 5px rgba(59, 102, 222, 0.35));
+.header-crumb:has(.content__title--editing) {
+  cursor: text;
+}
+
+.header-crumb__label,
+.header-crumb .app-header__title {
+  position: relative;
+  z-index: 1;
+  color: var(--ws-btn-text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+  min-width: 0;
+}
+
+.header-crumb--intermediate .header-crumb__label {
+  font-weight: 500;
+}
+
+.header-crumb__lock {
+  position: relative;
+  z-index: 1;
+  color: var(--ws-btn-text);
+  flex-shrink: 0;
 }
 
 .workspace-btn__logo {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-accent);
+  flex-shrink: 0;
 }
 
 .workspace-btn__name {
+  position: relative;
+  z-index: 1;
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--ws-btn-text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
   letter-spacing: 0.03em;
 }
 
@@ -725,6 +918,8 @@ a:hover {
    Git Sync Dot & Pulsating Animation
    ============================================================ */
 .git-dot {
+  position: relative;
+  z-index: 1;
   width: 9px;
   height: 9px;
   border-radius: 50%;
@@ -1835,7 +2030,7 @@ a:hover {
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-lg);
+  padding: 0 var(--space-lg) var(--space-lg);
 }
 
 .content:focus,
@@ -1885,7 +2080,16 @@ a:hover {
   min-width: 4ch;
 }
 
-.content__title--error {
+.header-crumb .app-header__title.content__title--editing {
+  overflow: visible;
+  text-overflow: clip;
+  min-width: 8ch;
+  cursor: text;
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.content__title--error,
+.header-crumb .app-header__title.content__title--editing.content__title--error {
   border-bottom: 2px solid var(--color-danger);
 }
 
@@ -3352,6 +3556,10 @@ a:hover {
   font-size: var(--font-size-note);
 }
 
+.md-page__content > :first-child {
+  margin-top: 0;
+}
+
 .md-page__content h1,
 .md-page__content h2,
 .md-page__content h3,
@@ -4344,7 +4552,7 @@ a:hover {
   border: none;
   overflow: hidden;
   background-color: transparent;
-  margin-top: calc(-1 * var(--space-lg));
+  margin-top: 0;
 }
 
 .md-editor-textarea-wrapper {
@@ -5146,9 +5354,28 @@ code.inline-code-wrapper .inline-code-copy-btn .copy-icon-success {
    ============================================================ */
 @media (max-width: 768px) {
   .app-header {
-    margin: 4px 6px 0 6px;
-    padding: 4px 8px;
+    margin: 0;
+    padding: 6px 8px;
     gap: var(--space-xs);
+  }
+
+  .header-crumb--intermediate {
+    margin-left: 15px;
+    padding: 0 6px 0 11px;
+    min-width: 28px;
+    max-width: 110px;
+  }
+
+  .header-crumb--last {
+    margin-left: 15px;
+    padding: 0 14px 0 11px;
+    min-width: 36px;
+  }
+
+  .workspace-btn__name {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .sidebar {

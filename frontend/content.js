@@ -1,11 +1,11 @@
 // content.js — Main content area
 import { state, apiFetch, withLocation, refreshPages, isHelpWorkspace } from './app.js';
 import { renderGroup } from './groupbox.js';
-import { renderNoteContent } from './note.js';
+import { renderNoteContent, cleanupActiveNoteEditor } from './note.js';
 import { renderWhiteboardPage, unmountWhiteboard } from './whiteboard.js';
 import { renderBpmnPage, unmountBpmn } from './bpmn.js';
 import { isEditModeActive, enterEditMode, exitEditMode, reAttachIfActive } from './reorganize.js';
-import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility } from './sidebar.js';
+import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs } from './sidebar.js';
 import { openConfirmModal } from './modal.js';
 
 let editEscListener = null;
@@ -449,6 +449,9 @@ function renderPageGrid(page) {
 }
 
 export function renderPage(page) {
+  cleanupActiveNoteEditor();
+  state.activeGridNote = null;
+  setHeaderBreadcrumbs(null);
   updateSidebarVisibility(page.page_type);
 
   // Whiteboard pages have their own renderer

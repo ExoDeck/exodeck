@@ -2,7 +2,7 @@
 import { state, apiFetch, withLocation } from './app.js';
 import { openModal } from './modal.js';
 import { renderPage } from './content.js';
-import { renderNoteItem, renderEncryptedNoteItem, openEncryptedNoteWindow } from './notes.js';
+import { renderNoteItem, renderEncryptedNoteItem, openNoteWindow, openEncryptedNoteWindow } from './notes.js';
 import { renderPasswordItem, openPasswordWindow } from './password.js';
 import { renderTaskItem, openAddTaskModal } from './task.js';
 import { canEncryptWorkspace, ensureVaultUnlocked, fetchVaultStatus } from './vault.js';
@@ -293,24 +293,7 @@ export async function addItemToGroup(type, groupIndex, slug, location) {
       break;
     }
     case 'note': {
-      const values = await openModal({
-        title: 'Add Note',
-        fields: [
-          { label: 'Title', name: 'title', type: 'text', help: 'e.g. My note', required: true },
-          { label: 'Content (Markdown)', name: 'content', type: 'textarea', help: 'Markdown formatted content' },
-        ],
-        confirmLabel: 'Add',
-      });
-      if (!values) return;
-      const bytes = new TextEncoder().encode(values.content ?? '');
-      const encoded = btoa(Array.from(bytes, b => String.fromCodePoint(b)).join(''));
-        await apiFetch(withLocation(`/pages/${slug}/groups/${groupIndex}/items`, location), {
-          method: 'POST',
-          body: JSON.stringify({ title: values.title, text: encoded }),
-        });
-        state.currentPage = await apiFetch(withLocation(`/pages/${slug}`, location));
-
-      renderPage(state.currentPage);
+      openNoteWindow(null, null, groupIndex, slug, location, 'edit');
       break;
     }
     case 'task': {

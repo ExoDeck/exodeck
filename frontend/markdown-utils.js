@@ -421,18 +421,17 @@ export async function renderMarkdownToElement(markdown, containerElement, option
       return;
     }
 
-    // Update the raw markdown in state.currentPage.rawMarkdown and save it
-    if (state.currentPage?.page_type === 'note') {
+    // Update the raw markdown in the active Note Page or Grid Note and save it
+    const { isActiveNoteView, getActiveNoteMarkdown, saveActiveNoteMarkdown } = await import('./note.js');
+    if (isActiveNoteView()) {
       const checkboxes = Array.from(containerElement.querySelectorAll('.task-list-checkbox'));
       const index = checkboxes.indexOf(event.target);
       if (index === -1) return;
-      
-      const newRaw = updateMarkdownCheckbox(state.currentPage.rawMarkdown, index, isChecked);
-      state.currentPage.rawMarkdown = newRaw;
-      
+
+      const newRaw = updateMarkdownCheckbox(getActiveNoteMarkdown(), index, isChecked);
+
       try {
-        const { callSaveApi } = await import('./note.js');
-        await callSaveApi(newRaw, state.currentSlug, false, state.currentLocation);
+        await saveActiveNoteMarkdown(newRaw);
       } catch (err) {
         console.error('Failed to save checkbox state', err);
         event.target.checked = !isChecked; // revert UI
@@ -697,7 +696,10 @@ function initTableEditing(containerElement) {
   tables.forEach((table, index) => {
     if (table.closest('.md-table-wrapper')) return;
 
-    const autoSumKey = `${state.currentLocation ?? ''}:${state.currentSlug ?? ''}:${index}`;
+    const gridNoteKey = state.activeGridNote
+      ? `${state.activeGridNote.groupIndex}:${state.activeGridNote.itemIndex}:`
+      : '';
+    const autoSumKey = `${state.currentLocation ?? ''}:${state.currentSlug ?? ''}:${gridNoteKey}${index}`;
 
     const wrapper = document.createElement('div');
     wrapper.className = 'md-table-wrapper';
@@ -964,7 +966,9 @@ function initTableEditing(containerElement) {
       cancelBtn.style.display = '';
       saveBtn.style.display = '';
 
-      const raw = state.currentPage?.rawMarkdown || '';
+      const raw = state.activeGridNote
+        ? (state.activeGridNote.rawMarkdown || '')
+        : (state.currentPage?.rawMarkdown || '');
       const lines = raw.split('\n');
       const { tableStart, tableEnd } = parseTableBoundaries(lines, index);
 
@@ -1127,7 +1131,8 @@ function initTableEditing(containerElement) {
         }
       });
 
-      let raw = state.currentPage?.rawMarkdown;
+      const { getActiveNoteMarkdown, saveActiveNoteMarkdown, renderNoteContent } = await import('./note.js');
+      const raw = getActiveNoteMarkdown();
       if (!raw) return;
       const lines = raw.split('\n');
       const tableStart = Number.parseInt(wrapper.dataset.tableStart, 10);
@@ -1141,10 +1146,8 @@ function initTableEditing(containerElement) {
         cancelBtn.disabled = true;
 
         try {
-          const { callSaveApi } = await import('./note.js');
-          await callSaveApi(newRaw, state.currentSlug, false, state.currentLocation);
+          await saveActiveNoteMarkdown(newRaw);
 
-          state.currentPage.rawMarkdown = newRaw;
           isEditing = false;
           wrapper.classList.remove('md-table-editing');
           editBtn.style.display = isReadOnlyDoc ? 'none' : '';
@@ -1152,7 +1155,6 @@ function initTableEditing(containerElement) {
           saveBtn.style.display = 'none';
 
           // Just triggering an update of the content view
-          const { renderNoteContent } = await import('./note.js');
           renderNoteContent(state.currentPage);
 
         } catch (err) {
