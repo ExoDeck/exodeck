@@ -1263,3 +1263,58 @@ func TestNotesWhiteboardsBpmnSearchTasksMoveAndSync(t *testing.T) {
 		callToolInvalidJSON(t, srv, toolName)
 	}
 }
+
+func TestHTTPTransportOriginRestriction(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+
+	// 1. No Origin header (native/local MCP client) -> 200 OK without ACAO wildcard
+	reqNoOrigin := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	wNoOrigin := httptest.NewRecorder()
+	srv.ServeHTTP(wNoOrigin, reqNoOrigin)
+	if wNoOrigin.Code != http.StatusOK {
+		t.Fatalf("GET /mcp without Origin: got %d, want 200", wNoOrigin.Code)
+	}
+	if acao := wNoOrigin.Header().Get("Access-Control-Allow-Origin"); acao != "" {
+		t.Errorf("GET /mcp without Origin: expected empty Access-Control-Allow-Origin, got %q", acao)
+	}
+
+	// 2. Localhost Origin on OPTIONS preflight and GET -> echoes origin and Vary: Origin
+	reqPreflight := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+	reqPreflight.Header.Set("Origin", "http://localhost:6274")
+	wPreflight := httptest.NewRecorder()
+	srv.ServeHTTP(wPreflight, reqPreflight)
+	if wPreflight.Code != http.StatusNoContent {
+		t.Fatalf("OPTIONS /mcp with localhost Origin: got %d, want 204", wPreflight.Code)
+	}
+	if acao := wPreflight.Header().Get("Access-Control-Allow-Origin"); acao != "http://localhost:6274" {
+		t.Errorf("OPTIONS /mcp ACAO = %q, want %q", acao, "http://localhost:6274")
+	}
+	if vary := wPreflight.Header().Get("Vary"); vary != "Origin" {
+		t.Errorf("OPTIONS /mcp Vary = %q, want %q", vary, "Origin")
+	}
+
+	reqLocalGet := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	reqLocalGet.Header.Set("Origin", "http://localhost:6274")
+	wLocalGet := httptest.NewRecorder()
+	srv.ServeHTTP(wLocalGet, reqLocalGet)
+	if wLocalGet.Code != http.StatusOK {
+		t.Fatalf("GET /mcp with localhost Origin: got %d, want 200", wLocalGet.Code)
+	}
+	if acao := wLocalGet.Header().Get("Access-Control-Allow-Origin"); acao != "http://localhost:6274" {
+		t.Errorf("GET /mcp ACAO = %q, want %q", acao, "http://localhost:6274")
+	}
+
+	// 3. Disallowed origins -> 403 Forbidden and no ACAO header
+	for _, badOrigin := range []string{"https://evil.com", "null", "http://localhost.evil.com:6274"} {
+		reqBad := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+		reqBad.Header.Set("Origin", badOrigin)
+		wBad := httptest.NewRecorder()
+		srv.ServeHTTP(wBad, reqBad)
+		if wBad.Code != http.StatusForbidden {
+			t.Errorf("Origin %q: got %d, want 403", badOrigin, wBad.Code)
+		}
+		if acao := wBad.Header().Get("Access-Control-Allow-Origin"); acao != "" {
+			t.Errorf("Origin %q: expected empty ACAO, got %q", badOrigin, acao)
+		}
+	}
+}

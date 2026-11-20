@@ -17,6 +17,12 @@ func TestPrintBanner(t *testing.T) {
 	printBanner("1.2.3")
 }
 
+func TestListenAddr(t *testing.T) {
+	if got := listenAddr(8000); got != "127.0.0.1:8000" {
+		t.Errorf("listenAddr(8000) = %q, want %q", got, "127.0.0.1:8000")
+	}
+}
+
 func TestResolveConfigDir(t *testing.T) {
 	// Explicit path should be cleaned and returned as-is
 	customDir := filepath.Join("custom", "config", "path")

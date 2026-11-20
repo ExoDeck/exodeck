@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/ExoDeck/exodeck/internal/netutil"
 )
 
 const maxStdioMessageSize = 16 * 1024 * 1024 // 16 MB
@@ -19,10 +21,17 @@ const maxStdioMessageSize = 16 * 1024 * 1024 // 16 MB
 // ServeHTTP handles MCP requests over Streamable HTTP (POST/GET/DELETE /mcp)
 // as well as legacy HTTP+SSE (GET /mcp/sse, POST /mcp/message?sessionId=...).
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if !netutil.IsLocalhostOrigin(origin) {
+			http.Error(w, "forbidden: origin not allowed", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+	}
 
 	switch r.Method {
 	case http.MethodOptions:
