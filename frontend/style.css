@@ -770,7 +770,7 @@ a:hover {
   font-family: var(--font-sans);
   cursor: pointer;
   user-select: none;
-  transition: color var(--transition), filter var(--transition);
+  transition: color var(--transition);
 }
 
 .header-crumb--1 {
@@ -4838,6 +4838,29 @@ a:hover {
 
 .workspace-edit-modal-overlay {
   z-index: 10001; /* above standard modal overlay */
+}
+
+.config-modal__path-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.config-modal__path-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.config-modal__browse-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.config-modal__path-error {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
 }
 
 /* ============================================================

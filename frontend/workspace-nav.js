@@ -51,14 +51,15 @@ function createResultItem(workspaceName, index) {
   iconContainer.style.height = '20px';
   iconContainer.style.flexShrink = '0';
 
-  const defaultSvg = `<svg width="20" height="20" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <rect x="0" y="6" width="36" height="78" fill="#d3d3d3"/>
-    <rect x="42" y="6"  width="22" height="22" fill="#d3d3d3"/>
-    <rect x="70" y="6"  width="22" height="22" fill="#d3d3d3"/>
-    <rect x="42" y="34" width="22" height="22" fill="#d3d3d3"/>
-    <rect x="70" y="34" width="22" height="22" fill="#d3d3d3"/>
-    <rect x="42" y="62" width="22" height="22" fill="#d3d3d3"/>
-    <rect x="70" y="62" width="22" height="22" fill="#d3d3d3"/>
+  const defaultSvg = `<svg width="20" height="20" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <g transform="matrix(1.0068533,-1.0068533,1.0068533,1.0068533,-64.877217,64)">
+      <circle cx="64" cy="64" r="22" stroke="#4f46e5" stroke-width="8"/>
+      <rect x="51" y="14" width="26" height="34" rx="6" fill="#00e5ff"/>
+      <rect x="51" y="80" width="26" height="34" rx="6" fill="#4f46e5"/>
+      <rect x="14" y="51" width="34" height="26" rx="6" fill="#00e5ff"/>
+      <rect x="80" y="51" width="34" height="26" rx="6" fill="#4f46e5"/>
+      <circle cx="64" cy="64" r="7" fill="#00e5ff"/>
+    </g>
   </svg>`;
 
   const img = document.createElement('img');

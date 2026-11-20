@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -17,11 +18,12 @@ import (
 
 // Server holds shared dependencies injected into every handler.
 type Server struct {
-	Store      *storage.Store
-	Vault      *vault.Manager
-	ConfigDir  string // path to directory containing config.json
-	FrontendFS fs.FS  // embedded or disk frontend filesystem
-	GitRunner  GitRunner
+	Store        *storage.Store
+	Vault        *vault.Manager
+	ConfigDir    string // path to directory containing config.json
+	FrontendFS   fs.FS  // embedded or disk frontend filesystem
+	GitRunner    GitRunner
+	FolderPicker func(ctx context.Context, initialDir string) (string, bool, error)
 }
 
 const (
@@ -121,6 +123,9 @@ func NewRouter(s *Server) http.Handler {
 		// Config
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.putConfig)
+
+		// Native OS folder picker for workspace configuration
+		r.Post("/fs/pick-folder", s.pickFolder)
 
 		// Sync
 		r.Get("/sync/status/all", s.syncStatusAll)
