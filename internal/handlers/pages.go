@@ -315,6 +315,18 @@ func (s *Server) decodeAndPrepareGroup(w http.ResponseWriter, r *http.Request, s
 	return prep, true
 }
 
+func normalizeGroupDueDate(group *models.Group) {
+	if group.DueDate == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(*group.DueDate)
+	if trimmed == "" {
+		group.DueDate = nil
+		return
+	}
+	group.DueDate = &trimmed
+}
+
 func (s *Server) addGroup(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	location := r.URL.Query().Get("location")
@@ -323,6 +335,13 @@ func (s *Server) addGroup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	normalizeGroupDueDate(&prep.group)
+	now := time.Now().Format(time.RFC3339)
+	if prep.group.CreatedAt == nil {
+		prep.group.CreatedAt = &now
+	}
+	prep.group.ModifiedAt = &now
 
 	prep.page.Groups = append(prep.page.Groups, prep.group)
 	if httpStatus, errMsg := s.Store.WritePage(slug, prep.page, location); httpStatus != 0 {
@@ -349,6 +368,14 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 	if !validateIndex(w, groupIndex, len(prep.page.Groups), "group") {
 		return
 	}
+
+	normalizeGroupDueDate(&prep.group)
+	existing := prep.page.Groups[groupIndex]
+	if existing.CreatedAt != nil {
+		prep.group.CreatedAt = existing.CreatedAt
+	}
+	now := time.Now().Format(time.RFC3339)
+	prep.group.ModifiedAt = &now
 
 	prep.page.Groups[groupIndex] = prep.group
 	if httpStatus, errMsg := s.Store.WritePage(slug, prep.page, location); httpStatus != 0 {

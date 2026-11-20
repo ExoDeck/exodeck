@@ -4,8 +4,9 @@ import { openModal, openConfirmModal } from './modal.js';
 import { renderPage } from './content.js';
 import { renderMarkdownToElement, updateMarkdownCheckbox } from './markdown-utils.js';
 import { renderNoteItem, renderEncryptedNoteItem, openNoteWindow, openEncryptedNoteWindow } from './notes.js';
+import { buildInfoTable } from './note.js';
 import { renderPasswordItem, openPasswordWindow } from './password.js';
-import { renderTaskItem, openAddTaskModal } from './task.js';
+import { renderTaskItem, openAddTaskModal, getDueStatus, formatDate } from './task.js';
 import { canEncryptWorkspace, ensureVaultUnlocked, fetchVaultStatus } from './vault.js';
 
 export const STICKY_COLORS = [
@@ -674,6 +675,84 @@ function buildStickyEditor({ card, initialTitle, initialText, fallbackTitle = 'S
   return { editorWrap, textarea };
 }
 
+function openStickyInfoModal(group, slug) {
+  const formatDateTime = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+  const pageName = state.currentPage?.['page-name'] ?? state.currentPage?.page_name ?? slug;
+  const rows = [
+    ['Note Name', group.title || ''],
+    ['Type', 'Sticky Note'],
+    ['Grid Page', pageName],
+    ...(group.due_date ? [['Due Date', formatDate(group.due_date)]] : []),
+    ['Creation Date', formatDateTime(group.created_at)],
+    ['Last Modified', formatDateTime(group.modified_at)],
+  ];
+  return openModal({
+    title: 'Sticky Note Info',
+    contentNode: buildInfoTable(rows),
+    confirmLabel: 'OK',
+    hideCancel: true,
+    dynamicWidth: true,
+  });
+}
+
+async function openStickyDueDateModal(group, groupIndex, slug, location) {
+  const values = await openModal({
+    title: 'Set Due Date',
+    fields: [
+      {
+        label: 'Due date (optional)',
+        name: 'due_date',
+        type: 'date',
+        value: group.due_date ?? '',
+        clearable: true,
+      },
+    ],
+    confirmLabel: 'Save',
+  });
+  if (!values) return;
+
+  const nextGroup = {
+    ...group,
+    type: 'sticky',
+    color: group.color || 'yellow',
+    items: group.items ?? [],
+  };
+  if (values.due_date) {
+    nextGroup.due_date = values.due_date;
+  } else {
+    delete nextGroup.due_date;
+  }
+  await persistStickyGroupUpdate(groupIndex, slug, location, nextGroup);
+  renderPage(state.currentPage);
+}
+
+function buildStickyDueBellButton(group, groupIndex, slug, location, readOnly) {
+  const dueStatus = getDueStatus(group.due_date);
+  if (dueStatus !== 'overdue' && dueStatus !== 'due_soon') return null;
+
+  const isOverdue = dueStatus === 'overdue';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `group-card__sticky-due-btn group-card__sticky-due-btn--${isOverdue ? 'overdue' : 'due-soon'}`;
+  const formattedDue = formatDate(group.due_date);
+  const label = isOverdue ? `Overdue (Due: ${formattedDue})` : `Due soon (Due: ${formattedDue})`;
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">notifications</span>';
+
+  if (readOnly) {
+    btn.disabled = true;
+  } else {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void openStickyDueDateModal(group, groupIndex, slug, location).catch(err => {
+        console.error('[ExoDeck] Set sticky due date failed:', err);
+      });
+    });
+  }
+  return btn;
+}
+
 function renderStickyGroup(group, groupIndex, slug, location = null) {
   const readOnly = isHelpWorkspace(location);
   const card = document.createElement('div');
@@ -684,11 +763,17 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
   const getMenuItems = () => [
     { action: 'edit-sticky', label: 'Edit', icon: 'edit' },
     { action: 'change-color', label: 'Change color', icon: 'palette' },
+    { action: 'set-due-date', label: 'Set due date', icon: 'event' },
+    { action: 'sticky-info', label: 'Info', icon: 'info' },
     { divider: true },
     { action: 'delete-box', label: 'Delete box', danger: true, icon: 'delete' },
   ];
 
   const { header, titleEl, menuBtn, menu, populateMenu } = buildGroupHeader(group, getMenuItems, readOnly);
+  const dueBellBtn = buildStickyDueBellButton(group, groupIndex, slug, location, readOnly);
+  if (dueBellBtn) {
+    header.insertBefore(dueBellBtn, menuBtn);
+  }
 
   const { picker: colorPicker, syncActiveSwatch } = buildStickyColorPicker(
     () => group.color || 'yellow',
@@ -752,6 +837,7 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
     if (card.classList.contains('group-card--sticky-editing')) return;
     card.classList.add('group-card--sticky-editing');
     bodyEl.hidden = true;
+    if (dueBellBtn) dueBellBtn.hidden = true;
 
     const { editorWrap, textarea } = buildStickyEditor({
       card,
@@ -802,6 +888,14 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
       colorPicker.hidden = false;
       _openColorPicker = colorPicker;
       attachOutsideCloseListener(colorPicker, menuBtn);
+    } else if (action === 'set-due-date') {
+      void openStickyDueDateModal(group, groupIndex, slug, location).catch(err => {
+        console.error('[ExoDeck] Set sticky due date failed:', err);
+      });
+    } else if (action === 'sticky-info') {
+      void openStickyInfoModal(group, slug).catch(err => {
+        console.error('[ExoDeck] Sticky note info failed:', err);
+      });
     } else if (action === 'delete-box') {
       void deleteGroupBox(group, groupIndex, slug, location).catch(err => {
         console.error('[ExoDeck] Action failed:', err);

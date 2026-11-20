@@ -224,7 +224,7 @@ func (s *Store) loadIndex() {
 		if idx.SearchIndex != nil {
 			s.searchIndex = idx.SearchIndex
 		}
-		if idx.Version < 2 {
+		if idx.Version < 3 {
 			s.taskIndex = nil
 		} else if idx.TaskIndex != nil {
 			s.taskIndex = idx.TaskIndex
@@ -245,7 +245,7 @@ func (s *Store) saveIndex() {
 	}
 	defer func() { _ = f.Close() }()
 	idx := IndexData{
-		Version:      2,
+		Version:      3,
 		PageEntries:  s.pageEntries,
 		SearchIndex:  s.searchIndex,
 		TaskIndex:    s.taskIndex,
@@ -1459,12 +1459,9 @@ func (s *Store) DeleteBpmnPage(slug, location string) (int, string) {
 	return 0, ""
 }
 
-// itemDueStatus returns "overdue", "due_soon", or "" for a single task item.
-func itemDueStatus(item models.Item, today, tomorrow time.Time) string {
-	if item.TaskChecked == nil || *item.TaskChecked || item.TaskDueDate == nil {
-		return ""
-	}
-	due, err := time.Parse("2006-01-02", *item.TaskDueDate)
+// dueStatusForDate returns "overdue", "due_soon", or "" for a YYYY-MM-DD date string.
+func dueStatusForDate(dueDate string, today, tomorrow time.Time) string {
+	due, err := time.Parse("2006-01-02", strings.TrimSpace(dueDate))
 	if err != nil {
 		return ""
 	}
@@ -1478,13 +1475,34 @@ func itemDueStatus(item models.Item, today, tomorrow time.Time) string {
 	return ""
 }
 
-// GetPageTaskStatus scans unchecked task items and returns the aggregate status.
+// itemDueStatus returns "overdue", "due_soon", or "" for a single task item.
+func itemDueStatus(item models.Item, today, tomorrow time.Time) string {
+	if item.TaskChecked == nil || *item.TaskChecked || item.TaskDueDate == nil {
+		return ""
+	}
+	return dueStatusForDate(*item.TaskDueDate, today, tomorrow)
+}
+
+// groupDueStatus returns "overdue", "due_soon", or "" for a sticky note group.
+func groupDueStatus(group models.Group, today, tomorrow time.Time) string {
+	if group.Type == nil || !strings.EqualFold(*group.Type, "sticky") || group.DueDate == nil {
+		return ""
+	}
+	return dueStatusForDate(*group.DueDate, today, tomorrow)
+}
+
+// GetPageTaskStatus scans unchecked task items and sticky notes with due dates and returns the aggregate status.
 func GetPageTaskStatus(page models.Page) string {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	tomorrow := today.Add(24 * time.Hour)
 	status := ""
 
 	for _, group := range page.Groups {
+		if gs := groupDueStatus(group, today, tomorrow); gs == "overdue" {
+			return "overdue"
+		} else if gs == "due_soon" {
+			status = "due_soon"
+		}
 		for _, item := range group.Items {
 			s := itemDueStatus(item, today, tomorrow)
 			if s == "overdue" {
@@ -1780,6 +1798,25 @@ func (s *Store) addTaskIndexItemsLocked(page models.Page, loc, slug string) {
 		return
 	}
 	for gIdx, group := range page.Groups {
+		if group.Type != nil && strings.EqualFold(*group.Type, "sticky") && group.DueDate != nil && strings.TrimSpace(*group.DueDate) != "" {
+			var createdAt string
+			if group.CreatedAt != nil {
+				createdAt = *group.CreatedAt
+			}
+			s.taskIndex = append(s.taskIndex, models.TaskIndexItem{
+				Location:    loc,
+				Slug:        slug,
+				PageName:    page.PageName,
+				GroupTitle:  "",
+				GroupIndex:  gIdx,
+				ItemIndex:   -1,
+				Title:       group.Title,
+				TaskDueDate: strings.TrimSpace(*group.DueDate),
+				TaskChecked: false,
+				CreatedAt:   createdAt,
+				ItemType:    "sticky",
+			})
+		}
 		for iIdx, item := range group.Items {
 			if item.TaskChecked == nil || *item.TaskChecked {
 				continue
@@ -1904,6 +1941,7 @@ func (s *Store) GetDueTasks() []models.DueTask {
 			Title:      item.Title,
 			DueDate:    item.TaskDueDate,
 			DueStatus:  status,
+			ItemType:   item.ItemType,
 		})
 	}
 
@@ -1964,6 +2002,9 @@ func (s *Store) GetAllTasks() []models.Task {
 
 	var results []models.Task
 	for _, item := range s.taskIndex {
+		if item.ItemType == "sticky" {
+			continue
+		}
 		if !visibleWorkspaces[item.Location] {
 			continue
 		}

@@ -144,22 +144,18 @@ function createOutlineButton() {
   return outlineBtn;
 }
 
-function buildGridNoteInfoContent(gridNote) {
-  const formatDate = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+/**
+ * Build a styled key-value info table for Info modals.
+ * @param {Array<[string, string]>} rows
+ * @returns {HTMLTableElement}
+ */
+export function buildInfoTable(rows) {
   const table = document.createElement('table');
   table.style.width = '100%';
   table.style.borderCollapse = 'collapse';
   table.style.fontSize = 'var(--font-size-sm)';
   table.style.color = 'var(--color-text)';
 
-  const rows = [
-    ['Note Name', gridNote.title || ''],
-    ['Type', gridNote.isEncrypted ? 'Encrypted Note' : 'Note'],
-    ['Group', gridNote.groupTitle || ''],
-    ['Grid Page', gridNote.pageName || ''],
-    ['Creation Date', formatDate(gridNote.item?.created_at)],
-    ['Last Modified', formatDate(gridNote.item?.modified_at)],
-  ];
   for (const [label, value] of rows) {
     const tr = document.createElement('tr');
     const tdLabel = document.createElement('td');
@@ -178,6 +174,19 @@ function buildGridNoteInfoContent(gridNote) {
     table.appendChild(tr);
   }
   return table;
+}
+
+function buildGridNoteInfoContent(gridNote) {
+  const formatDate = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+  const rows = [
+    ['Note Name', gridNote.title || ''],
+    ['Type', gridNote.isEncrypted ? 'Encrypted Note' : 'Note'],
+    ['Group', gridNote.groupTitle || ''],
+    ['Grid Page', gridNote.pageName || ''],
+    ['Creation Date', formatDate(gridNote.item?.created_at)],
+    ['Last Modified', formatDate(gridNote.item?.modified_at)],
+  ];
+  return buildInfoTable(rows);
 }
 
 function createGridNoteActionMenu(gridNote) {

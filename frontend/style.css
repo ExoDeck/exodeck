@@ -725,6 +725,11 @@ a:hover {
   outline: 2px solid var(--color-accent);
 }
 
+.group-card--notif-highlight {
+  animation: notifHighlightPulse 1.1s ease-in-out 2;
+  outline: 2px solid var(--color-accent);
+}
+
 .menu-shortcut {
   margin-left: auto;
   font-size: 0.75rem;
@@ -2808,6 +2813,36 @@ a:hover {
 
 .group-card__sticky-action-btn {
   flex-shrink: 0;
+}
+
+.group-card__sticky-due-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color var(--transition), transform var(--transition);
+}
+
+.group-card__sticky-due-btn:disabled {
+  cursor: default;
+}
+
+.group-card__sticky-due-btn:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+
+.group-card__sticky-due-btn--due-soon {
+  color: var(--color-warning);
+}
+
+.group-card__sticky-due-btn--overdue {
+  color: var(--color-danger);
 }
 
 .group-card--sticky .group-card__sticky-action-btn:hover {

@@ -1533,6 +1533,52 @@ func TestStickyNotesAndGroupColors(t *testing.T) {
 	if isErr || !strings.Contains(delStickyOut, `"deleted"`) {
 		t.Fatalf("delete_sticky_note failed: %s", delStickyOut)
 	}
+
+	// 10. Sticky note due_date support (set, list_tasks filter=due, clear)
+	todayStr := time.Now().UTC().Truncate(24 * time.Hour).Format("2006-01-02")
+	dueAddOut, isErr := callToolHelper(t, srv, "add_sticky_note", map[string]interface{}{
+		"slug":      "sticky-board",
+		"workspace": "Main",
+		"title":     "Due Sticky",
+		"markdown":  "Check this today",
+		"due_date":  todayStr,
+	})
+	if isErr || !strings.Contains(dueAddOut, todayStr) || !strings.Contains(dueAddOut, `"created_at"`) {
+		t.Fatalf("add_sticky_note with due_date failed: %s", dueAddOut)
+	}
+	var addResp struct {
+		GroupIndex int `json:"group_index"`
+	}
+	if err := json.Unmarshal([]byte(dueAddOut), &addResp); err != nil {
+		t.Fatalf("unmarshal add_sticky_note output: %v", err)
+	}
+
+	dueListOut, isErr := callToolHelper(t, srv, "list_tasks", map[string]interface{}{
+		"filter":    "due",
+		"workspace": "Main",
+	})
+	if isErr || !strings.Contains(dueListOut, "Due Sticky") || !strings.Contains(dueListOut, `"sticky"`) {
+		t.Fatalf("expected Due Sticky in list_tasks(filter=due), got: %s", dueListOut)
+	}
+
+	// Clear due_date via update_sticky_note
+	clearDueOut, isErr := callToolHelper(t, srv, "update_sticky_note", map[string]interface{}{
+		"slug":        "sticky-board",
+		"workspace":   "Main",
+		"group_index": addResp.GroupIndex,
+		"due_date":    "",
+	})
+	if isErr || strings.Contains(clearDueOut, `"due_date"`) {
+		t.Fatalf("expected cleared due_date to be omitted, got: %s", clearDueOut)
+	}
+
+	dueListAfterClear, isErr := callToolHelper(t, srv, "list_tasks", map[string]interface{}{
+		"filter":    "due",
+		"workspace": "Main",
+	})
+	if isErr || strings.Contains(dueListAfterClear, "Due Sticky") {
+		t.Errorf("expected Due Sticky removed from due list after clear, got: %s", dueListAfterClear)
+	}
 }
 
 func TestHTTPTransportOriginRestriction(t *testing.T) {

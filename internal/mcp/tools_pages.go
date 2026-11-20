@@ -35,6 +35,7 @@ func (s *Server) registerPageTools() {
 		"type":     stringEnumProp("Box type: 'group' (default) for a link/note/task box, or 'sticky' for a Markdown sticky note.", "group", "sticky"),
 		"markdown": stringProp("Plain Markdown content (used only when type='sticky')."),
 		"color":    stringEnumProp("Optional card background color ('none', 'yellow', 'amber', 'orange', 'red', 'rose', 'pink', 'purple', 'violet', 'indigo', 'blue', 'sky', 'cyan', 'teal', 'emerald', 'green', 'lime'). Sticky notes default to 'yellow'; groups default to 'none'.", groupColorEnum...),
+		"due_date": stringProp("Optional due date in YYYY-MM-DD format (used only when type='sticky')."),
 		"items":    arrayProp("Items in this group (only for regular groups, not sticky notes).", itemInputSchema),
 	}, "title")
 
@@ -100,6 +101,7 @@ func (s *Server) registerPageTools() {
 			"type":      stringEnumProp("Box type: 'group' (default) or 'sticky'.", "group", "sticky"),
 			"markdown":  stringProp("Plain Markdown content (used only when type='sticky')."),
 			"color":     stringEnumProp("Optional card background color.", groupColorEnum...),
+			"due_date":  stringProp("Optional due date in YYYY-MM-DD format (used only when type='sticky')."),
 			"items":     arrayProp("Optional initial items in the group (only for regular groups).", itemInputSchema),
 		}, "slug", "title"),
 		s.toolAddGroup,
@@ -108,7 +110,7 @@ func (s *Server) registerPageTools() {
 	// 16. update_group
 	s.registerTool(
 		"update_group",
-		"Update a group or sticky note's title, color, Markdown content (for sticky notes), or items (for regular groups) on a Grid page.",
+		"Update a group or sticky note's title, color, due date, Markdown content (for sticky notes), or items (for regular groups) on a Grid page.",
 		objectSchema(map[string]interface{}{
 			"slug":        stringProp("Grid page slug."),
 			"group_index": intProp("Zero-based index of the group or sticky note to update."),
@@ -117,6 +119,7 @@ func (s *Server) registerPageTools() {
 			"markdown":    stringProp("Optional Markdown content (only for sticky notes)."),
 			"append":      boolProp("If true, appends markdown to the existing sticky note content instead of replacing it."),
 			"color":       stringEnumProp("Optional card background color (use 'none' for transparent).", groupColorEnum...),
+			"due_date":    stringProp("Optional due date in YYYY-MM-DD format for sticky notes (pass empty string to clear)."),
 			"items":       arrayProp("Optional replacement items for a regular group.", itemInputSchema),
 		}, "slug", "group_index"),
 		s.toolUpdateGroup,
@@ -388,6 +391,7 @@ func (s *Server) registerPageTools() {
 			"title":     stringProp("Title of the sticky note."),
 			"markdown":  stringProp("Plain Markdown content for the sticky note."),
 			"color":     stringEnumProp("Optional sticky note color (defaults to 'yellow'). Use 'none' for transparent.", groupColorEnum...),
+			"due_date":  stringProp("Optional due date in YYYY-MM-DD format."),
 			"workspace": stringProp("Optional workspace name."),
 		}, "slug", "title"),
 		s.toolAddStickyNote,
@@ -396,7 +400,7 @@ func (s *Server) registerPageTools() {
 	// 40. update_sticky_note
 	s.registerTool(
 		"update_sticky_note",
-		"Update or append Markdown content, title, or color of an existing Sticky Note card on a Grid page.",
+		"Update or append Markdown content, title, color, or due date of an existing Sticky Note card on a Grid page.",
 		objectSchema(map[string]interface{}{
 			"slug":        stringProp("Grid page slug."),
 			"group_index": intProp("Zero-based index of the sticky note in the page's groups array."),
@@ -404,6 +408,7 @@ func (s *Server) registerPageTools() {
 			"markdown":    stringProp("Optional new Markdown content (or content to append when append=true)."),
 			"append":      boolProp("If true, appends markdown to the existing sticky note content instead of replacing it."),
 			"color":       stringEnumProp("Optional new sticky note color (use 'none' for transparent).", groupColorEnum...),
+			"due_date":    stringProp("Optional due date in YYYY-MM-DD format (pass empty string to clear)."),
 			"workspace":   stringProp("Optional workspace name."),
 		}, "slug", "group_index"),
 		s.toolUpdateStickyNote,
@@ -441,11 +446,14 @@ type MCPItem struct {
 
 // MCPGroup is the MCP representation of a Group or Sticky Note.
 type MCPGroup struct {
-	Title    string    `json:"title"`
-	Type     *string   `json:"type,omitempty"`
-	Markdown *string   `json:"markdown,omitempty"`
-	Color    *string   `json:"color,omitempty"`
-	Items    []MCPItem `json:"items"`
+	Title      string    `json:"title"`
+	Type       *string   `json:"type,omitempty"`
+	Markdown   *string   `json:"markdown,omitempty"`
+	Color      *string   `json:"color,omitempty"`
+	DueDate    *string   `json:"due_date,omitempty"`
+	CreatedAt  *string   `json:"created_at,omitempty"`
+	ModifiedAt *string   `json:"modified_at,omitempty"`
+	Items      []MCPItem `json:"items"`
 }
 
 // MCPPage is the MCP representation of a Grid Page.
@@ -480,6 +488,7 @@ type MCPGroupInput struct {
 	Markdown *string        `json:"markdown,omitempty"`
 	Text     *string        `json:"text,omitempty"`
 	Color    *string        `json:"color,omitempty"`
+	DueDate  *string        `json:"due_date,omitempty"`
 	Items    []MCPItemInput `json:"items,omitempty"`
 }
 
@@ -561,10 +570,13 @@ func sanitizeGroupForRead(g models.Group) MCPGroup {
 		items = append(items, sanitizeItemForRead(it))
 	}
 	out := MCPGroup{
-		Title: g.Title,
-		Type:  g.Type,
-		Color: g.Color,
-		Items: items,
+		Title:      g.Title,
+		Type:       g.Type,
+		Color:      g.Color,
+		DueDate:    g.DueDate,
+		CreatedAt:  g.CreatedAt,
+		ModifiedAt: g.ModifiedAt,
+		Items:      items,
 	}
 	if isStickyGroup(g) {
 		md := ""
@@ -692,6 +704,8 @@ func buildGroupFromInput(gIn MCPGroupInput) (models.Group, error) {
 		colorPtr = &c
 	}
 
+	now := time.Now().Format(time.RFC3339)
+
 	if boxType == "sticky" {
 		if len(gIn.Items) > 0 {
 			return models.Group{}, errors.New("sticky notes cannot contain items")
@@ -705,15 +719,26 @@ func buildGroupFromInput(gIn MCPGroupInput) (models.Group, error) {
 			defaultColor := "yellow"
 			colorPtr = &defaultColor
 		}
+		var duePtr *string
+		if gIn.DueDate != nil && strings.TrimSpace(*gIn.DueDate) != "" {
+			d := strings.TrimSpace(*gIn.DueDate)
+			duePtr = &d
+		}
 		return models.Group{
-			Title: gTitle,
-			Type:  &stickyType,
-			Text:  &mdVal,
-			Color: colorPtr,
-			Items: []models.Item{},
+			Title:      gTitle,
+			Type:       &stickyType,
+			Text:       &mdVal,
+			Color:      colorPtr,
+			DueDate:    duePtr,
+			CreatedAt:  &now,
+			ModifiedAt: &now,
+			Items:      []models.Item{},
 		}, nil
 	}
 
+	if gIn.DueDate != nil && strings.TrimSpace(*gIn.DueDate) != "" {
+		return models.Group{}, errors.New("only sticky notes can have a due_date (set type='sticky' or use add_sticky_note)")
+	}
 	if mdContent != nil && *mdContent != "" {
 		return models.Group{}, errors.New("only sticky notes can have markdown content (set type='sticky' or use add_sticky_note)")
 	}
@@ -724,9 +749,11 @@ func buildGroupFromInput(gIn MCPGroupInput) (models.Group, error) {
 	}
 
 	return models.Group{
-		Title: gTitle,
-		Color: colorPtr,
-		Items: items,
+		Title:      gTitle,
+		Color:      colorPtr,
+		CreatedAt:  &now,
+		ModifiedAt: &now,
+		Items:      items,
 	}, nil
 }
 
@@ -742,7 +769,7 @@ func buildGroupsFromInput(groupsIn []MCPGroupInput) ([]models.Group, error) {
 	return groups, nil
 }
 
-func applyGroupUpdate(group *models.Group, title, markdown, text, color *string, appendMD bool, items *[]MCPItemInput) error {
+func applyGroupUpdate(group *models.Group, title, markdown, text, color, dueDate *string, appendMD bool, items *[]MCPItemInput) error {
 	if title != nil {
 		trimmed := strings.TrimSpace(*title)
 		if trimmed == "" {
@@ -763,6 +790,8 @@ func applyGroupUpdate(group *models.Group, title, markdown, text, color *string,
 		mdContent = text
 	}
 
+	now := time.Now().Format(time.RFC3339)
+
 	if isStickyGroup(*group) {
 		if items != nil {
 			return errors.New("cannot set items on a sticky note")
@@ -774,12 +803,24 @@ func applyGroupUpdate(group *models.Group, title, markdown, text, color *string,
 			}
 			group.Text = &newMD
 		}
+		if dueDate != nil {
+			d := strings.TrimSpace(*dueDate)
+			if d == "" {
+				group.DueDate = nil
+			} else {
+				group.DueDate = &d
+			}
+		}
 		if group.Items == nil {
 			group.Items = []models.Item{}
 		}
+		group.ModifiedAt = &now
 		return nil
 	}
 
+	if dueDate != nil && strings.TrimSpace(*dueDate) != "" {
+		return errors.New("cannot set due_date on a regular group; only sticky notes support due_date")
+	}
 	if mdContent != nil && *mdContent != "" {
 		return errors.New("cannot set markdown content on a regular group; only sticky notes support markdown")
 	}
@@ -793,6 +834,7 @@ func applyGroupUpdate(group *models.Group, title, markdown, text, color *string,
 		}
 		group.Items = builtItems
 	}
+	group.ModifiedAt = &now
 	return nil
 }
 
@@ -979,7 +1021,7 @@ func (s *Server) appendGroupToPage(slug, workspace string, gIn MCPGroupInput) (i
 	return len(page.Groups) - 1, wsName, grp, nil
 }
 
-func (s *Server) updateGroupOnPage(slug, workspace string, groupIndex int, requireSticky bool, title, markdown, text, color *string, appendMD bool, items *[]MCPItemInput) (string, models.Group, error) {
+func (s *Server) updateGroupOnPage(slug, workspace string, groupIndex int, requireSticky bool, title, markdown, text, color, dueDate *string, appendMD bool, items *[]MCPItemInput) (string, models.Group, error) {
 	wsName, _, st, errMsg := s.Store.ResolveWorkspace(workspace)
 	if st != 0 {
 		return "", models.Group{}, errors.New(errMsg)
@@ -998,7 +1040,7 @@ func (s *Server) updateGroupOnPage(slug, workspace string, groupIndex int, requi
 		return "", models.Group{}, fmt.Errorf("group at index %d is not a sticky note", groupIndex)
 	}
 
-	if err := applyGroupUpdate(group, title, markdown, text, color, appendMD, items); err != nil {
+	if err := applyGroupUpdate(group, title, markdown, text, color, dueDate, appendMD, items); err != nil {
 		return "", models.Group{}, err
 	}
 
@@ -1050,6 +1092,7 @@ func (s *Server) toolAddGroup(_ context.Context, args json.RawMessage) (interfac
 		Markdown  *string        `json:"markdown"`
 		Text      *string        `json:"text"`
 		Color     *string        `json:"color"`
+		DueDate   *string        `json:"due_date"`
 		Items     []MCPItemInput `json:"items"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
@@ -1062,6 +1105,7 @@ func (s *Server) toolAddGroup(_ context.Context, args json.RawMessage) (interfac
 		Markdown: in.Markdown,
 		Text:     in.Text,
 		Color:    in.Color,
+		DueDate:  in.DueDate,
 		Items:    in.Items,
 	})
 	if err != nil {
@@ -1080,6 +1124,9 @@ func (s *Server) toolAddGroup(_ context.Context, args json.RawMessage) (interfac
 	if grp.Color != nil {
 		resp["color"] = *grp.Color
 	}
+	if grp.DueDate != nil {
+		resp["due_date"] = *grp.DueDate
+	}
 	return resp, nil
 }
 
@@ -1093,13 +1140,14 @@ func (s *Server) toolUpdateGroup(_ context.Context, args json.RawMessage) (inter
 		Text       *string         `json:"text"`
 		Append     bool            `json:"append"`
 		Color      *string         `json:"color"`
+		DueDate    *string         `json:"due_date"`
 		Items      *[]MCPItemInput `json:"items"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	wsName, grp, err := s.updateGroupOnPage(in.Slug, in.Workspace, in.GroupIndex, false, in.Title, in.Markdown, in.Text, in.Color, in.Append, in.Items)
+	wsName, grp, err := s.updateGroupOnPage(in.Slug, in.Workspace, in.GroupIndex, false, in.Title, in.Markdown, in.Text, in.Color, in.DueDate, in.Append, in.Items)
 	if err != nil {
 		return nil, err
 	}
@@ -1116,6 +1164,9 @@ func (s *Server) toolUpdateGroup(_ context.Context, args json.RawMessage) (inter
 	}
 	if grp.Color != nil {
 		resp["color"] = *grp.Color
+	}
+	if grp.DueDate != nil {
+		resp["due_date"] = *grp.DueDate
 	}
 	return resp, nil
 }
@@ -1139,6 +1190,7 @@ func (s *Server) toolAddStickyNote(_ context.Context, args json.RawMessage) (int
 		Markdown  *string `json:"markdown"`
 		Text      *string `json:"text"`
 		Color     *string `json:"color"`
+		DueDate   *string `json:"due_date"`
 		Workspace string  `json:"workspace"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
@@ -1152,6 +1204,7 @@ func (s *Server) toolAddStickyNote(_ context.Context, args json.RawMessage) (int
 		Markdown: in.Markdown,
 		Text:     in.Text,
 		Color:    in.Color,
+		DueDate:  in.DueDate,
 	})
 	if err != nil {
 		return nil, err
@@ -1174,13 +1227,14 @@ func (s *Server) toolUpdateStickyNote(_ context.Context, args json.RawMessage) (
 		Text       *string `json:"text"`
 		Append     bool    `json:"append"`
 		Color      *string `json:"color"`
+		DueDate    *string `json:"due_date"`
 		Workspace  string  `json:"workspace"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	wsName, grp, err := s.updateGroupOnPage(in.Slug, in.Workspace, in.GroupIndex, true, in.Title, in.Markdown, in.Text, in.Color, in.Append, nil)
+	wsName, grp, err := s.updateGroupOnPage(in.Slug, in.Workspace, in.GroupIndex, true, in.Title, in.Markdown, in.Text, in.Color, in.DueDate, in.Append, nil)
 	if err != nil {
 		return nil, err
 	}

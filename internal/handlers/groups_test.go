@@ -402,3 +402,112 @@ func TestStickyNoteGroupCRUD(t *testing.T) {
 		t.Errorf("unexpected persisted sticky group after PUT: %v", gotGroup)
 	}
 }
+
+func TestStickyGroupDueDateAndTimestamps(t *testing.T) {
+	ts, store, _ := newTestServer(t)
+	store.WritePage("sticky-due", models.Page{PageName: "Sticky Due", Groups: []models.Group{}}, "") //nolint:errcheck
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	todayStr := today.Format("2006-01-02")
+	tomorrowStr := today.Add(24 * time.Hour).Format("2006-01-02")
+	stickyType := "sticky"
+	text := "Remember this"
+	yellow := "yellow"
+
+	// Create sticky note with due date today (overdue)
+	code, body := post(t, ts, "/api/v1/pages/sticky-due/groups", models.Group{
+		Title:   "Due Sticky",
+		Type:    &stickyType,
+		Text:    &text,
+		Color:   &yellow,
+		DueDate: &todayStr,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("POST sticky group: %d %v", code, body)
+	}
+
+	code, pageBody := get(t, ts, "/api/v1/pages/sticky-due")
+	if code != http.StatusOK {
+		t.Fatalf("GET page: %d", code)
+	}
+	groups, _ := pageBody["groups"].([]interface{})
+	gotGroup, _ := groups[0].(map[string]interface{})
+	createdAt, _ := gotGroup["created_at"].(string)
+	modifiedAt, _ := gotGroup["modified_at"].(string)
+	if createdAt == "" || modifiedAt == "" {
+		t.Fatalf("expected created_at and modified_at to be populated, got %v", gotGroup)
+	}
+	if gotGroup["due_date"] != todayStr {
+		t.Fatalf("expected due_date %q, got %v", todayStr, gotGroup["due_date"])
+	}
+
+	// Verify bootstrap due_tasks includes sticky note as overdue
+	code, boot := get(t, ts, "/api/v1/bootstrap")
+	if code != http.StatusOK {
+		t.Fatalf("GET bootstrap: %d", code)
+	}
+	dueTasks, _ := boot["due_tasks"].([]interface{})
+	if len(dueTasks) != 1 {
+		t.Fatalf("expected 1 due notification, got %v", dueTasks)
+	}
+	entry, _ := dueTasks[0].(map[string]interface{})
+	if entry["item_type"] != "sticky" || entry["due_status"] != "overdue" || entry["title"] != "Due Sticky" {
+		t.Errorf("unexpected sticky notification entry: %v", entry)
+	}
+
+	// Update sticky note to tomorrow (due_soon) without sending created_at: should preserve created_at
+	code, putBody := put(t, ts, "/api/v1/pages/sticky-due/groups/0", models.Group{
+		Title:   "Due Sticky",
+		Type:    &stickyType,
+		Text:    &text,
+		Color:   &yellow,
+		DueDate: &tomorrowStr,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("PUT sticky tomorrow: %d %v", code, putBody)
+	}
+	if putBody["created_at"] != createdAt {
+		t.Errorf("expected created_at preserved (%q), got %v", createdAt, putBody["created_at"])
+	}
+	if putBody["due_date"] != tomorrowStr {
+		t.Errorf("expected due_date %q, got %v", tomorrowStr, putBody["due_date"])
+	}
+
+	code, boot = get(t, ts, "/api/v1/bootstrap")
+	if code != http.StatusOK {
+		t.Fatalf("GET bootstrap after due_soon update: %d", code)
+	}
+	dueTasks, _ = boot["due_tasks"].([]interface{})
+	if len(dueTasks) != 1 {
+		t.Fatalf("expected 1 due notification, got %v", dueTasks)
+	}
+	entry, _ = dueTasks[0].(map[string]interface{})
+	if entry["due_status"] != "due_soon" {
+		t.Errorf("expected due_status 'due_soon', got %v", entry["due_status"])
+	}
+
+	// Unset due date with empty string / nil
+	emptyDue := ""
+	code, putBody = put(t, ts, "/api/v1/pages/sticky-due/groups/0", models.Group{
+		Title:   "Due Sticky",
+		Type:    &stickyType,
+		Text:    &text,
+		Color:   &yellow,
+		DueDate: &emptyDue,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("PUT clear due_date: %d %v", code, putBody)
+	}
+	if _, hasDue := putBody["due_date"]; hasDue {
+		t.Errorf("expected due_date to be omitted when cleared, got %v", putBody["due_date"])
+	}
+
+	code, boot = get(t, ts, "/api/v1/bootstrap")
+	if code != http.StatusOK {
+		t.Fatalf("GET bootstrap after clearing due_date: %d", code)
+	}
+	dueTasks, _ = boot["due_tasks"].([]interface{})
+	if len(dueTasks) != 0 {
+		t.Errorf("expected 0 due notifications after clearing sticky due_date, got %v", dueTasks)
+	}
+}
