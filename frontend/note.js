@@ -5,8 +5,89 @@ import { prepareMermaidForPrint } from './mermaid-viewer.js';
 import { showImageManagerModal } from './media-modal.js';
 import { showErrorBubble, parseApiError } from './ui-utils.js';
 import { toggleOutlineSidebar, getIsSidebarOutlineActive, refreshOutlineSidebar } from './outline-nav.js';
-import { createPageActionMenu, isPinned } from './sidebar.js';
-import { openConfirmModal } from './modal.js';
+import { createPageActionMenu, isPinned, setHeaderBreadcrumbs, updateSidebarVisibility, closeFloatingNavigator } from './sidebar.js';
+import { openConfirmModal, openModal } from './modal.js';
+import { renderPage } from './content.js';
+import { isEditModeActive, exitEditMode } from './reorganize.js';
+
+let activeEditorCleanup = null;
+
+/**
+ * Clean up any active inline note editor listeners and DOM state.
+ */
+export function cleanupActiveNoteEditor() {
+  activeEditorCleanup?.();
+}
+
+/**
+ * Decode a Base64-encoded UTF-8 string.
+ * @param {string} base64
+ * @returns {string}
+ */
+export function decodeNote(base64) {
+  if (!base64) return '';
+  return new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.codePointAt(0)));
+}
+
+/**
+ * Encode a string to a Base64-encoded UTF-8 string.
+ * @param {string} text
+ * @returns {string}
+ */
+export function encodeNote(text) {
+  const bytes = new TextEncoder().encode(text ?? '');
+  return btoa(Array.from(bytes, b => String.fromCodePoint(b)).join(''));
+}
+
+/**
+ * Whether the active view is displaying a Note Page or a full-screen Grid Note.
+ * @returns {boolean}
+ */
+export function isActiveNoteView() {
+  return state.currentPage?.page_type === 'note' || Boolean(state.activeGridNote);
+}
+
+/**
+ * Return the raw Markdown of the currently displayed Note Page or Grid Note.
+ * @returns {string}
+ */
+export function getActiveNoteMarkdown() {
+  if (state.activeGridNote) {
+    return state.activeGridNote.rawMarkdown ?? '';
+  }
+  return state.currentPage?.rawMarkdown ?? '';
+}
+
+/**
+ * Persist updated raw Markdown for the active Note Page or Grid Note.
+ * @param {string} newRaw
+ */
+export async function saveActiveNoteMarkdown(newRaw) {
+  const gn = state.activeGridNote;
+  if (gn) {
+    const payload = gn.isEncrypted
+      ? { title: gn.title, enc_text: newRaw }
+      : { title: gn.title, text: encodeNote(newRaw) };
+    await apiFetch(
+      withLocation(`/pages/${encodeURIComponent(gn.slug)}/groups/${gn.groupIndex}/items/${gn.itemIndex}`, gn.location),
+      { method: 'PUT', body: JSON.stringify(payload) }
+    );
+    gn.rawMarkdown = newRaw;
+    if (gn.item) {
+      if (gn.isEncrypted) gn.item.enc_text = newRaw;
+      else gn.item.text = payload.text;
+    }
+    const target = state.currentPage?.groups?.[gn.groupIndex]?.items?.[gn.itemIndex];
+    if (target) {
+      if (gn.isEncrypted) target.enc_text = newRaw;
+      else target.text = payload.text;
+    }
+    return;
+  }
+
+  state.currentPage.rawMarkdown = newRaw;
+  await callSaveApi(newRaw, state.currentSlug, false, state.currentLocation);
+}
 
 async function updateMediaCount(slug, location, btn) {
   if (!slug) return;
@@ -25,6 +106,320 @@ async function updateMediaCount(slug, location, btn) {
     }
   } catch {
     // ignore fetch errors (e.g. page not saved yet)
+  }
+}
+
+function createUploadButton(slug, location, insertCallback = null) {
+  const uploadBtn = document.createElement('button');
+  uploadBtn.type = 'button';
+  uploadBtn.className = 'page-header__icon-btn';
+  uploadBtn.style.position = 'relative';
+  uploadBtn.title = 'Manage Images';
+  uploadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>`;
+  uploadBtn.addEventListener('click', () => {
+    showImageManagerModal(slug, location, insertCallback ?? undefined);
+  });
+
+  const onMediaChange = () => {
+    if (!document.body.contains(uploadBtn)) {
+      document.removeEventListener('exodeck:media-changed', onMediaChange);
+      return;
+    }
+    void updateMediaCount(slug, location, uploadBtn);
+  };
+  document.addEventListener('exodeck:media-changed', onMediaChange);
+  void updateMediaCount(slug, location, uploadBtn);
+
+  return uploadBtn;
+}
+
+function createOutlineButton() {
+  const outlineBtn = document.createElement('button');
+  outlineBtn.type = 'button';
+  outlineBtn.className = 'page-header__icon-btn';
+  outlineBtn.title = 'Outline (o)';
+  outlineBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`;
+  outlineBtn.addEventListener('click', toggleOutlineSidebar);
+  outlineBtn.classList.toggle('active', isPinned());
+  return outlineBtn;
+}
+
+/**
+ * Build a styled key-value info table for Info modals.
+ * @param {Array<[string, string]>} rows
+ * @returns {HTMLTableElement}
+ */
+export function buildInfoTable(rows) {
+  const table = document.createElement('table');
+  table.style.width = '100%';
+  table.style.borderCollapse = 'collapse';
+  table.style.fontSize = 'var(--font-size-sm)';
+  table.style.color = 'var(--color-text)';
+
+  for (const [label, value] of rows) {
+    const tr = document.createElement('tr');
+    const tdLabel = document.createElement('td');
+    tdLabel.style.padding = 'var(--space-xs) var(--space-sm) var(--space-xs) 0';
+    tdLabel.style.color = 'var(--color-text-muted)';
+    tdLabel.style.whiteSpace = 'nowrap';
+    tdLabel.innerHTML = `<strong>${label}:</strong>`;
+
+    const tdValue = document.createElement('td');
+    tdValue.style.padding = 'var(--space-xs) 0';
+    tdValue.style.wordBreak = 'break-all';
+    tdValue.textContent = value;
+
+    tr.appendChild(tdLabel);
+    tr.appendChild(tdValue);
+    table.appendChild(tr);
+  }
+  return table;
+}
+
+function buildGridNoteInfoContent(gridNote) {
+  const formatDate = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+  const rows = [
+    ['Note Name', gridNote.title || ''],
+    ['Type', gridNote.isEncrypted ? 'Encrypted Note' : 'Note'],
+    ['Group', gridNote.groupTitle || ''],
+    ['Grid Page', gridNote.pageName || ''],
+    ['Creation Date', formatDate(gridNote.item?.created_at)],
+    ['Last Modified', formatDate(gridNote.item?.modified_at)],
+  ];
+  return buildInfoTable(rows);
+}
+
+function createGridNoteActionMenu(gridNote) {
+  const menuWrapper = document.createElement('div');
+  menuWrapper.className = 'page-header__page-menu';
+
+  const menuTrigger = document.createElement('button');
+  menuTrigger.type = 'button';
+  menuTrigger.className = 'page-header__icon-btn';
+  menuTrigger.setAttribute('aria-label', `Actions for "${gridNote.title}"`);
+  menuTrigger.title = 'Note actions';
+  menuTrigger.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">more_horiz</span>';
+
+  const menuPanel = document.createElement('div');
+  menuPanel.className = 'sidebar__page-menu-panel add-page-menu';
+
+  const closeMenu = () => menuPanel.classList.remove('add-page-menu--open');
+
+  const infoItem = document.createElement('button');
+  infoItem.type = 'button';
+  infoItem.className = 'add-page-menu__item';
+  infoItem.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px; margin-right: 8px;">info</span> Info';
+  infoItem.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    await openModal({
+      title: 'Note Info',
+      contentNode: buildGridNoteInfoContent(gridNote),
+      confirmLabel: 'OK',
+      hideCancel: true,
+      dynamicWidth: true,
+    });
+  });
+
+  const sep = document.createElement('hr');
+  sep.className = 'add-page-menu__separator';
+  sep.setAttribute('aria-hidden', 'true');
+
+  const printItem = document.createElement('button');
+  printItem.type = 'button';
+  printItem.className = 'add-page-menu__item';
+  printItem.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">print</span> Print';
+  printItem.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    void printActiveNote(gridNote.slug, gridNote.location).catch(console.error);
+  });
+
+  const deleteItem = document.createElement('button');
+  deleteItem.type = 'button';
+  deleteItem.className = 'add-page-menu__item add-page-menu__item--danger';
+  deleteItem.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">delete</span> Delete';
+  deleteItem.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    const confirmed = await openModal({
+      title: `Delete note “${gridNote.title}”?`,
+      fields: [],
+      confirmLabel: 'Delete',
+      isDanger: true,
+    });
+    if (!confirmed) return;
+    try {
+      await apiFetch(
+        withLocation(`/pages/${encodeURIComponent(gridNote.slug)}/groups/${gridNote.groupIndex}/items/${gridNote.itemIndex}`, gridNote.location),
+        { method: 'DELETE' }
+      );
+      state.currentPage = await apiFetch(withLocation(`/pages/${encodeURIComponent(gridNote.slug)}`, gridNote.location));
+      gridNote.itemIndex = null;
+      await closeActiveGridNote({ force: true });
+    } catch (err) {
+      console.error('[ExoDeck] Failed to delete grid note:', err);
+    }
+  });
+
+  menuPanel.appendChild(infoItem);
+  menuPanel.appendChild(sep);
+  menuPanel.appendChild(printItem);
+  menuPanel.appendChild(deleteItem);
+
+  menuWrapper.appendChild(menuTrigger);
+  menuWrapper.appendChild(menuPanel);
+
+  menuTrigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    document.querySelectorAll('.sidebar__page-menu-panel.add-page-menu--open, .sidebar__location-menu-panel.add-page-menu--open').forEach(el => {
+      if (el !== menuPanel) el.classList.remove('add-page-menu--open');
+    });
+    const isOpen = menuPanel.classList.contains('add-page-menu--open');
+    if (!isOpen) {
+      menuPanel.style.visibility = 'hidden';
+      menuPanel.style.display = 'block';
+      const panelWidth = menuPanel.offsetWidth;
+      menuPanel.style.display = '';
+      menuPanel.style.visibility = '';
+
+      const rect = menuTrigger.getBoundingClientRect();
+      let left = rect.left;
+      if (left + panelWidth + 8 > window.innerWidth) {
+        left = rect.right - panelWidth;
+      }
+      if (left < 8) left = 8;
+
+      menuPanel.style.left = `${left}px`;
+      menuPanel.style.top = `${rect.bottom + 4}px`;
+      menuPanel.style.bottom = '';
+    }
+    menuPanel.classList.toggle('add-page-menu--open');
+  });
+
+  return menuWrapper;
+}
+
+/**
+ * Open a Grid Note (standard or encrypted) in full-screen Note view or editor mode.
+ *
+ * @param {{ item: object|null, itemIndex: number|null, groupIndex: number, slug: string, location?: string|null, isEncrypted?: boolean, initialMode?: 'view'|'edit' }} opts
+ */
+export async function openGridNoteView({
+  item,
+  itemIndex,
+  groupIndex,
+  slug,
+  location = null,
+  isEncrypted = false,
+  initialMode = 'view',
+}) {
+  const resolvedLocation = location ?? state.currentLocation ?? null;
+  if (
+    !state.currentPage ||
+    state.currentSlug !== slug ||
+    (state.currentLocation ?? '') !== (resolvedLocation ?? '')
+  ) {
+    state.currentPage = await apiFetch(withLocation(`/pages/${encodeURIComponent(slug)}`, resolvedLocation));
+    state.currentSlug = slug;
+    state.currentLocation = resolvedLocation;
+  }
+
+  if (isEditModeActive()) {
+    exitEditMode();
+  }
+  cleanupActiveNoteEditor();
+
+  const page = state.currentPage;
+  const pageName = page?.['page-name'] ?? page?.page_name ?? slug;
+  const groupTitle = page?.groups?.[groupIndex]?.title ?? `Group ${groupIndex + 1}`;
+  const isNew = item === null;
+  const rawMarkdown = isNew
+    ? ''
+    : (isEncrypted ? (item.enc_text ?? '') : decodeNote(item.text ?? ''));
+
+  state.activeGridNote = {
+    item,
+    itemIndex,
+    groupIndex,
+    slug,
+    location: resolvedLocation,
+    isEncrypted,
+    isNew,
+    pageName,
+    groupTitle,
+    title: isNew ? '' : (item.title ?? ''),
+    rawMarkdown,
+    isEditing: false,
+    requestClose: null,
+  };
+
+  setHeaderBreadcrumbs({ pageName, groupTitle, isEncrypted });
+  updateSidebarVisibility('note');
+  closeFloatingNavigator();
+
+  const contentEl = document.getElementById('content');
+  if (contentEl) {
+    contentEl.scrollTop = 0;
+  }
+
+  if (initialMode === 'edit' || isNew) {
+    openInlineNoteEditor({
+      rawMarkdown,
+      slug,
+      isNew,
+      location: resolvedLocation,
+      isGridNote: true,
+      gridNote: state.activeGridNote,
+      editFromView: false,
+    });
+  } else {
+    renderNoteContent(page);
+  }
+}
+
+/**
+ * Exit full-screen Grid Note view/editor and return to the parent Grid Page.
+ * @param {{ force?: boolean }} [opts]
+ */
+export async function closeActiveGridNote({ force = false } = {}) {
+  const gn = state.activeGridNote;
+  if (!gn) return;
+
+  if (!force && gn.isEditing && typeof gn.requestClose === 'function') {
+    await gn.requestClose('grid');
+    return;
+  }
+
+  cleanupActiveNoteEditor();
+  const { groupIndex, itemIndex, slug, location } = gn;
+  state.activeGridNote = null;
+  setHeaderBreadcrumbs(null);
+
+  if (
+    !state.currentPage ||
+    state.currentSlug !== slug ||
+    (state.currentLocation ?? '') !== (location ?? '')
+  ) {
+    state.currentPage = await apiFetch(withLocation(`/pages/${encodeURIComponent(slug)}`, location));
+    state.currentSlug = slug;
+    state.currentLocation = location;
+  }
+
+  renderPage(state.currentPage);
+
+  const grid = document.getElementById('pageGrid');
+  const card = grid?.querySelector(`.group-card[data-group-index="${groupIndex}"]`);
+  if (card) {
+    card.classList.add('group-card--focused');
+    if (itemIndex != null) {
+      const itemEl = card.querySelector(`.item[data-item-index="${itemIndex}"]`);
+      itemEl?.classList.add('item--focused');
+    }
   }
 }
 
@@ -66,14 +461,32 @@ function extractTitleFromMarkdown(rawMarkdown) {
 }
 
 /**
- * Render a note into the content area.
- * @param {{ 'page-name': string, page_type: 'note', rawMarkdown: string }} page
+ * Render a note (or full-screen Grid Note) into the content area.
+ * @param {{ 'page-name': string, page_type?: string, rawMarkdown?: string }} page
  */
 export function renderNoteContent(page) {
-  // 1. Page title — extract from rawMarkdown if present
+  cleanupActiveNoteEditor();
+  const gridNote = state.activeGridNote;
+
+  // 1. Page title & body
   const titleEl = document.getElementById('pageTitle');
-  const { title: extractedTitle, body: bodyMarkdown } = extractTitleFromMarkdown(page.rawMarkdown ?? '');
-  if (titleEl) titleEl.textContent = extractedTitle ?? (page['page-name'] ?? page.page_name ?? '');
+  let bodyMarkdown;
+  if (gridNote) {
+    gridNote.isEditing = false;
+    gridNote.requestClose = null;
+    setHeaderBreadcrumbs({
+      pageName: gridNote.pageName,
+      groupTitle: gridNote.groupTitle,
+      isEncrypted: gridNote.isEncrypted,
+    });
+    if (titleEl) titleEl.textContent = gridNote.title ?? '';
+    bodyMarkdown = gridNote.rawMarkdown ?? '';
+  } else {
+    setHeaderBreadcrumbs(null);
+    const { title: extractedTitle, body } = extractTitleFromMarkdown(page.rawMarkdown ?? '');
+    if (titleEl) titleEl.textContent = extractedTitle ?? (page['page-name'] ?? page.page_name ?? '');
+    bodyMarkdown = body;
+  }
 
   // Mark content area for tighter markdown layout
   const contentEl = document.getElementById('content');
@@ -94,66 +507,82 @@ export function renderNoteContent(page) {
     }
   }).catch(console.error);
 
-  // 3. Edit button in content actions
+  // 3. Action buttons in header
   const actionsEl = document.getElementById('contentActions');
-  if (actionsEl) {
-    actionsEl.innerHTML = '';
-    
-    const uploadBtn = document.createElement('button');
-    uploadBtn.type = 'button';
-    uploadBtn.className = 'page-header__icon-btn';
-    uploadBtn.style.position = 'relative'; // For absolute badge placement
-    uploadBtn.title = 'Manage Images';
-    uploadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>`;
-    uploadBtn.addEventListener('click', () => {
-      showImageManagerModal(state.currentSlug, state.currentLocation);
-    });
-    
-    const onMediaChange1 = () => {
-      if (!document.body.contains(uploadBtn)) {
-        document.removeEventListener('exodeck:media-changed', onMediaChange1);
-        return;
-      }
-      void updateMediaCount(state.currentSlug, state.currentLocation, uploadBtn);
-    };
-    document.addEventListener('exodeck:media-changed', onMediaChange1);
-    void updateMediaCount(state.currentSlug, state.currentLocation, uploadBtn);
+  if (!actionsEl) return;
+  actionsEl.innerHTML = '';
 
-
-
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.id = 'editMdPageBtn';
-    editBtn.className = 'page-header__icon-btn';
-    editBtn.title = 'Edit (e)';
-    editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
-    editBtn.addEventListener('click', () => {
-      openInlineNoteEditor({
-        rawMarkdown: page.rawMarkdown,
-        slug: state.currentSlug,
-        location: state.currentLocation,
-        isNew: false,
-        onSave: applyNotePageEdit,
-        onCancel: () => renderNoteContent(page),
+  if (gridNote) {
+    const outlineBtn = createOutlineButton();
+    if (!isHelpWorkspace(gridNote.location)) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.id = 'editMdPageBtn';
+      editBtn.className = 'page-header__icon-btn';
+      editBtn.title = 'Edit (e)';
+      editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
+      editBtn.addEventListener('click', () => {
+        openInlineNoteEditor({
+          rawMarkdown: gridNote.rawMarkdown,
+          slug: gridNote.slug,
+          location: gridNote.location,
+          isNew: false,
+          isGridNote: true,
+          gridNote,
+          editFromView: true,
+        });
       });
-    });
 
-    const outlineBtn = document.createElement('button');
-    outlineBtn.type = 'button';
-    outlineBtn.className = 'page-header__icon-btn';
-    outlineBtn.title = 'Outline (o)';
-    outlineBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`;
-    outlineBtn.addEventListener('click', toggleOutlineSidebar);
-    outlineBtn.classList.toggle('active', isPinned());
-
-
-    if (!isHelpWorkspace(state.currentLocation)) {
-      const menuBtn = createPageActionMenu(state.currentSlug, page['page-name'], 'note', state.currentLocation, true);
+      const uploadBtn = createUploadButton(gridNote.slug, gridNote.location);
+      const menuBtn = createGridNoteActionMenu(gridNote);
       actionsEl.appendChild(editBtn);
       actionsEl.appendChild(outlineBtn);
       actionsEl.appendChild(uploadBtn);
       actionsEl.appendChild(menuBtn);
+    } else {
+      actionsEl.appendChild(outlineBtn);
     }
+
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'page-header__icon-btn';
+    backBtn.title = 'Back to Grid (Esc)';
+    backBtn.setAttribute('aria-label', 'Back to Grid');
+    backBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">close</span>';
+    backBtn.addEventListener('click', () => {
+      void closeActiveGridNote();
+    });
+    actionsEl.appendChild(backBtn);
+    return;
+  }
+
+  const uploadBtn = createUploadButton(state.currentSlug, state.currentLocation);
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.id = 'editMdPageBtn';
+  editBtn.className = 'page-header__icon-btn';
+  editBtn.title = 'Edit (e)';
+  editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
+  editBtn.addEventListener('click', () => {
+    openInlineNoteEditor({
+      rawMarkdown: page.rawMarkdown,
+      slug: state.currentSlug,
+      location: state.currentLocation,
+      isNew: false,
+      onSave: applyNotePageEdit,
+      onCancel: () => renderNoteContent(page),
+    });
+  });
+
+  const outlineBtn = createOutlineButton();
+
+  if (!isHelpWorkspace(state.currentLocation)) {
+    const menuBtn = createPageActionMenu(state.currentSlug, page['page-name'], 'note', state.currentLocation, true);
+    actionsEl.appendChild(editBtn);
+    actionsEl.appendChild(outlineBtn);
+    actionsEl.appendChild(uploadBtn);
+    actionsEl.appendChild(menuBtn);
   }
 }
 
@@ -389,13 +818,18 @@ function createToolbar(textarea) {
   tableContainer.appendChild(picker);
   toolbar.appendChild(tableContainer);
 
-  document.addEventListener('click', (e) => {
+  const onToolbarDocClick = (e) => {
+    if (!toolbar.isConnected) {
+      document.removeEventListener('click', onToolbarDocClick);
+      return;
+    }
     if (!tableContainer.contains(e.target)) {
       picker.classList.remove('active');
       cells.forEach(el => el.classList.remove('selected'));
       label.textContent = '0x0';
     }
-  });
+  };
+  document.addEventListener('click', onToolbarDocClick);
 
   return toolbar;
 }
@@ -469,7 +903,7 @@ function handleEditorTab(e, textArea, updatePreviewFn) {
   if (typeof updatePreviewFn === 'function') updatePreviewFn();
 }
 
-function setupEditorActions(actionsEl, slug, location, isNew, extractedTitle, textarea, updatePreviewRef) {
+function setupEditorActions(actionsEl, slug, location, isNew, extractedTitle, textarea, updatePreviewRef, gridNote = null) {
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'page-header__icon-btn';
@@ -487,55 +921,31 @@ function setupEditorActions(actionsEl, slug, location, isNew, extractedTitle, te
   actionsEl.appendChild(saveBtn);
   actionsEl.appendChild(cancelBtn);
 
-  if (!isNew) {
-    const uploadBtn = document.createElement('button');
-    uploadBtn.type = 'button';
-    uploadBtn.className = 'page-header__icon-btn';
-    uploadBtn.style.position = 'relative';
-    uploadBtn.title = 'Manage Images';
-    uploadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>`;
-    uploadBtn.addEventListener('click', () => {
-      showImageManagerModal(slug, location, (md) => {
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        textarea.value = textarea.value.substring(0, start) + md + textarea.value.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + md.length;
-        updatePreviewRef.current();
-        textarea.focus();
-      });
+  if (slug) {
+    const uploadBtn = createUploadButton(slug, location, (md) => {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + md + textarea.value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + md.length;
+      updatePreviewRef.current();
+      textarea.focus();
     });
-    
-    const onMediaChange2 = () => {
-      if (!document.body.contains(uploadBtn)) {
-        document.removeEventListener('exodeck:media-changed', onMediaChange2);
-        return;
-      }
-      void updateMediaCount(slug, location, uploadBtn);
-    };
-    document.addEventListener('exodeck:media-changed', onMediaChange2);
-    void updateMediaCount(slug, location, uploadBtn);
-
-    const outlineBtn = document.createElement('button');
-    outlineBtn.type = 'button';
-    outlineBtn.className = 'page-header__icon-btn';
-    outlineBtn.title = 'Outline (o)';
-    outlineBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`;
-    outlineBtn.addEventListener('click', toggleOutlineSidebar);
-    outlineBtn.classList.toggle('active', isPinned());
-
+    const outlineBtn = createOutlineButton();
     actionsEl.appendChild(outlineBtn);
     actionsEl.appendChild(uploadBtn);
   }
 
   if (!isNew && !isHelpWorkspace(location)) {
-    const menuBtn = createPageActionMenu(slug, extractedTitle, 'note', location, true);
+    const menuBtn = gridNote
+      ? createGridNoteActionMenu(gridNote)
+      : createPageActionMenu(slug, extractedTitle, 'note', location, true);
     actionsEl.appendChild(menuBtn);
   }
 
   return { saveBtn, cancelBtn };
 }
 
-function attachMediaHandlers(textarea, saveBtn, slug, location, isNew, updatePreview) {
+function attachMediaHandlers(textarea, saveBtn, slug, location, updatePreview) {
   async function uploadSingleMediaFile(file) {
     const formData = new FormData();
     formData.append('file', file);
@@ -556,7 +966,7 @@ function attachMediaHandlers(textarea, saveBtn, slug, location, isNew, updatePre
   }
 
   async function handleMediaUploads(files) {
-    if (isNew || !files || files.length === 0) return;
+    if (!slug || !files || files.length === 0) return;
     const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
 
@@ -719,23 +1129,61 @@ function updateEditorHighlight(text, highlightCode) {
 }
 
 /**
- * Open the inline editor layout for a note.
+ * Open the inline editor layout for a note (Note Page or full-screen Grid Note).
  *
- * @param {{ rawMarkdown: string, slug: string|null, isNew: boolean, location?: string|null, onSave?: (slug:string, name:string) => void, onCancel?: () => void }} opts
+ * @param {{ rawMarkdown: string, slug: string|null, isNew: boolean, location?: string|null, isGridNote?: boolean, gridNote?: object|null, editFromView?: boolean, onSave?: (slug:string, name:string) => void, onCancel?: () => void }} opts
  */
-export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null, onSave, onCancel }) {
+export function openInlineNoteEditor({
+  rawMarkdown,
+  slug,
+  isNew,
+  location = null,
+  isGridNote = false,
+  gridNote = null,
+  editFromView = false,
+  onSave,
+  onCancel,
+}) {
+  cleanupActiveNoteEditor();
+  const effectiveGridNote = isGridNote ? (gridNote ?? state.activeGridNote) : null;
+
   // 1. Prepare Content Area
   const titleEl = document.getElementById('pageTitle');
-  const { title: extractedTitle, body: bodyMarkdown } = isNew
-    ? { title: '', body: '' }
-    : extractTitleFromMarkdown(rawMarkdown);
+  let extractedTitle;
+  let bodyMarkdown;
+  if (effectiveGridNote) {
+    extractedTitle = isNew ? '' : (effectiveGridNote.title ?? '');
+    bodyMarkdown = isNew ? '' : (effectiveGridNote.rawMarkdown ?? '');
+    effectiveGridNote.isEditing = true;
+    setHeaderBreadcrumbs({
+      pageName: effectiveGridNote.pageName,
+      groupTitle: effectiveGridNote.groupTitle,
+      isEncrypted: effectiveGridNote.isEncrypted,
+    });
+  } else {
+    setHeaderBreadcrumbs(null);
+    const parsed = isNew
+      ? { title: '', body: '' }
+      : extractTitleFromMarkdown(rawMarkdown);
+    extractedTitle = parsed.title ?? '';
+    bodyMarkdown = parsed.body;
+  }
+
+  const onTitleEnterKeyDown = (e) => {
+    if (e.key === 'Enter') e.preventDefault();
+  };
+  const onTitleInput = () => {
+    if (titleEl?.textContent?.trim()) {
+      titleEl.classList.remove('content__title--error');
+    }
+  };
+
   if (titleEl) {
-    titleEl.textContent = extractedTitle ?? '';
+    titleEl.textContent = extractedTitle;
     titleEl.setAttribute('contenteditable', 'plaintext-only');
     titleEl.classList.add('content__title--editing');
-    titleEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') e.preventDefault();
-    });
+    titleEl.addEventListener('keydown', onTitleEnterKeyDown);
+    titleEl.addEventListener('input', onTitleInput);
   }
   const grid = document.getElementById('pageGrid');
   if (!grid) return;
@@ -840,7 +1288,16 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   window.addEventListener('resize', syncEditorOverlay);
 
   const updatePreviewRef = { current: () => {} };
-  const { saveBtn, cancelBtn } = setupEditorActions(actionsEl, slug, location, isNew, extractedTitle, textarea, updatePreviewRef);
+  const { saveBtn, cancelBtn } = setupEditorActions(
+    actionsEl,
+    slug,
+    location,
+    isNew,
+    extractedTitle,
+    textarea,
+    updatePreviewRef,
+    effectiveGridNote
+  );
 
   const handleNewPageTabOrder = (e) => {
     if (!isNew || e.key !== 'Tab') return;
@@ -930,7 +1387,7 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   updatePreview({ immediate: true });
   void loadMarkdownDependencies().then(() => updatePreview({ immediate: true })).catch(console.error);
 
-  attachMediaHandlers(textarea, saveBtn, slug, location, isNew, updatePreview);
+  attachMediaHandlers(textarea, saveBtn, slug, location, updatePreview);
 
   textarea.addEventListener('dragover', e => {
     if (e.dataTransfer.types.includes('Files')) {
@@ -1005,6 +1462,9 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   document.addEventListener('mouseup', onMouseUp);
 
   function cleanup() {
+    if (activeEditorCleanup === cleanup) {
+      activeEditorCleanup = null;
+    }
     if (afRequest) {
       cancelAnimationFrame(afRequest);
       afRequest = null;
@@ -1018,6 +1478,10 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
+    if (titleEl) {
+      titleEl.removeEventListener('keydown', onTitleEnterKeyDown);
+      titleEl.removeEventListener('input', onTitleInput);
+    }
     if (isNew) {
       titleEl?.removeEventListener('keydown', handleNewPageTabOrder);
       textarea.removeEventListener('keydown', handleNewPageTabOrder);
@@ -1028,21 +1492,38 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
       titleEl.removeAttribute('contenteditable');
       titleEl.classList.remove('content__title--editing', 'content__title--error');
     }
+    if (effectiveGridNote) {
+      effectiveGridNote.isEditing = false;
+      effectiveGridNote.requestClose = null;
+    }
     document.getElementById('content')?.classList.remove('content--editing');
   }
+  activeEditorCleanup = cleanup;
 
   const initialTitle = titleEl?.textContent?.trim() ?? '';
   const initialBody = textarea.value;
   const isDirty = () => (titleEl?.textContent?.trim() ?? '') !== initialTitle || textarea.value !== initialBody;
 
-  const requestCancel = async () => {
+  const requestCancel = async (target = 'default') => {
     if (isDirty()) {
       const discard = await openConfirmModal();
       if (!discard) return;
     }
     cleanup();
+    if (effectiveGridNote) {
+      if (target === 'grid' || !editFromView) {
+        await closeActiveGridNote({ force: true });
+        return;
+      }
+      renderNoteContent(state.currentPage);
+      return;
+    }
     if (onCancel) onCancel();
   };
+
+  if (effectiveGridNote) {
+    effectiveGridNote.requestClose = requestCancel;
+  }
 
   // Cancel
   cancelBtn.addEventListener('click', () => {
@@ -1058,6 +1539,56 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
       return;
     }
     titleEl?.classList.remove('content__title--error');
+
+    if (effectiveGridNote) {
+      const body = textarea.value ?? '';
+      const payload = effectiveGridNote.isEncrypted
+        ? { title, enc_text: body }
+        : { title, text: encodeNote(body) };
+
+      saveBtn.disabled = true;
+      try {
+        let savedItemIndex = effectiveGridNote.itemIndex;
+        if (effectiveGridNote.isNew) {
+          const res = await apiFetch(
+            withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}/groups/${effectiveGridNote.groupIndex}/items`, effectiveGridNote.location),
+            { method: 'POST', body: JSON.stringify(payload) }
+          );
+          if (typeof res?.item_index === 'number') {
+            savedItemIndex = res.item_index;
+          }
+        } else {
+          await apiFetch(
+            withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}/groups/${effectiveGridNote.groupIndex}/items/${effectiveGridNote.itemIndex}`, effectiveGridNote.location),
+            { method: 'PUT', body: JSON.stringify(payload) }
+          );
+        }
+
+        const freshPage = await apiFetch(
+          withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}`, effectiveGridNote.location)
+        );
+        state.currentPage = freshPage;
+
+        const items = freshPage?.groups?.[effectiveGridNote.groupIndex]?.items ?? [];
+        if (savedItemIndex == null || !items[savedItemIndex]) {
+          savedItemIndex = items.findIndex(it => it.title === title);
+        }
+        const savedItem = savedItemIndex >= 0 ? items[savedItemIndex] : payload;
+
+        effectiveGridNote.item = savedItem;
+        effectiveGridNote.itemIndex = savedItemIndex >= 0 ? savedItemIndex : null;
+        effectiveGridNote.isNew = false;
+        effectiveGridNote.title = title;
+        effectiveGridNote.rawMarkdown = body;
+
+        cleanup();
+        renderNoteContent(freshPage);
+      } catch (err) {
+        alert(err.message);
+        saveBtn.disabled = false;
+      }
+      return;
+    }
 
     // Duplicate check for new pages
     if (isNew) {
@@ -1095,6 +1626,11 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
   saveBtn.addEventListener('click', save);
 
   function onKeyDown(e) {
+    if (document.getElementById('_confirmModalOverlay')) return;
+    if (document.querySelector('.modal-overlay, .add-picker, .keynav:not([hidden])')) return;
+    if (!document.getElementById('floatingNav')?.hasAttribute('hidden')) return;
+    if (document.getElementById('notificationMenuPanel')?.classList.contains('notification-panel--open')) return;
+    if (document.querySelector('.add-page-menu--open')) return;
     if (e.key === 'Escape') {
       void requestCancel();
     } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
@@ -1118,22 +1654,7 @@ export function openInlineNoteEditor({ rawMarkdown, slug, isNew, location = null
 // Print
 // ---------------------------------------------------------------------------
 
-/**
- * Fetch and print a note page in a new popup window.
- * @param {string} slug
- * @param {string|null} location
- */
-export async function printNotePage(slug, location = null) {
-  let rawMarkdown;
-    const path = withLocation(`/notes/${encodeURIComponent(slug)}`, location);
-    const res = await fetch(`/api/v1${path}`);
-    if (!res.ok) throw new Error(`Could not load note ${slug}`);
-    rawMarkdown = await res.text();
-
-
-  const h1Match = /^#\s+(.+)/m.exec(rawMarkdown);
-  const title = h1Match ? h1Match[1].trim() : slug;
-
+async function renderAndPrintMarkdown(title, rawMarkdown) {
   // Render markdown to HTML in a temporary element attached to DOM (so mermaid can measure)
   const tmp = document.createElement('div');
   tmp.dataset.isPrint = 'true';
@@ -1246,4 +1767,36 @@ export async function printNotePage(slug, location = null) {
 ${bodyHtml}
 <script>window.onload = () => window.print();</script>
 </body>`;
+}
+
+/**
+ * Fetch and print a note page in a new popup window.
+ * @param {string} slug
+ * @param {string|null} location
+ */
+export async function printNotePage(slug, location = null) {
+  const path = withLocation(`/notes/${encodeURIComponent(slug)}`, location);
+  const res = await fetch(`/api/v1${path}`);
+  if (!res.ok) throw new Error(`Could not load note ${slug}`);
+  const rawMarkdown = await res.text();
+
+  const h1Match = /^#\s+(.+)/m.exec(rawMarkdown);
+  const title = h1Match ? h1Match[1].trim() : slug;
+  await renderAndPrintMarkdown(title, rawMarkdown);
+}
+
+/**
+ * Print the currently displayed Note Page or full-screen Grid Note.
+ * @param {string} slug
+ * @param {string|null} location
+ */
+export async function printActiveNote(slug, location = null) {
+  if (state.activeGridNote) {
+    const gn = state.activeGridNote;
+    const title = gn.title || 'Note';
+    const rawMarkdown = gn.rawMarkdown ? `# ${title}\n\n${gn.rawMarkdown}` : `# ${title}`;
+    await renderAndPrintMarkdown(title, rawMarkdown);
+    return;
+  }
+  await printNotePage(slug, location);
 }

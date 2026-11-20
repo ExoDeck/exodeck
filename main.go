@@ -114,10 +114,10 @@ func main() {
 	}
 
 	router := handlers.NewRouter(srv)
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	addr := listenAddr(cfg.Port)
 
 	printBanner(Version)
-	log.Printf("ExoDeck listening on http://localhost%s", addr)
+	log.Printf("ExoDeck listening on http://localhost:%d (bound to %s)", cfg.Port, addr)
 
 	httpSrv := &http.Server{Addr: addr, Handler: router}
 
@@ -147,6 +147,10 @@ func main() {
 		}
 		log.Println("ExoDeck stopped.")
 	}
+}
+
+func listenAddr(port int) string {
+	return fmt.Sprintf("127.0.0.1:%d", port)
 }
 
 func printBanner(version string) {

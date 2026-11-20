@@ -51,6 +51,9 @@ export const state = {
   /** Type of the active page/view ('grid', 'note', 'whiteboard', 'bpmn', or null) */
   activePageType: null,
 
+  /** Active full-screen grid note context, or null when viewing a regular page */
+  activeGridNote: null,
+
   /** Active configuration (set by config.js) */
   config: null,
 

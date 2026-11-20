@@ -449,7 +449,16 @@ export async function openConfigModal() {
                 <input class="modal__input" id="_edit_ws_name" type="text" value="${_esc(loc.name)}" />
                 
                 <label class="modal__label" for="_edit_ws_path" title="Absolute filesystem directory path">Path</label>
-                <input class="modal__input" id="_edit_ws_path" type="text" value="${_esc(loc.path)}" />
+                <div class="config-modal__path-field">
+                    <div class="config-modal__path-row">
+                        <input class="modal__input" id="_edit_ws_path" type="text" value="${_esc(loc.path)}" style="flex: 1;" />
+                        <button type="button" class="btn btn--ghost config-modal__browse-btn" id="_edit_ws_browse" title="Browse folders">
+                            <span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">folder</span>
+                            Browse…
+                        </button>
+                    </div>
+                    <div class="config-modal__path-error" id="_edit_ws_path_error" hidden></div>
+                </div>
                 
                 <label class="modal__label">Master Password Vault</label>
                 ${index !== -1 ? `
@@ -508,6 +517,41 @@ export async function openConfigModal() {
         document.addEventListener('keydown', onEditEscape, true);
 
         editModal.querySelector('#_edit_ws_cancel').addEventListener('click', closeEditModal);
+
+        const nameInput = editModal.querySelector('#_edit_ws_name');
+        const pathInput = editModal.querySelector('#_edit_ws_path');
+        const browseBtn = editModal.querySelector('#_edit_ws_browse');
+        const pathErrorEl = editModal.querySelector('#_edit_ws_path_error');
+        if (browseBtn && pathInput) {
+            browseBtn.addEventListener('click', async () => {
+                if (pathErrorEl) {
+                    pathErrorEl.hidden = true;
+                    pathErrorEl.textContent = '';
+                }
+                browseBtn.disabled = true;
+                try {
+                    const res = await apiFetch('/fs/pick-folder', {
+                        method: 'POST',
+                        body: JSON.stringify({ initial_path: pathInput.value.trim() }),
+                    });
+                    if (res && !res.cancelled && res.path) {
+                        pathInput.value = res.path;
+                        if (nameInput && nameInput.value.trim() === '') {
+                            const baseName = res.path.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).pop();
+                            if (baseName) nameInput.value = baseName;
+                        }
+                        pathInput.focus();
+                    }
+                } catch (err) {
+                    if (pathErrorEl) {
+                        pathErrorEl.textContent = err?.message || 'Could not open folder picker';
+                        pathErrorEl.hidden = false;
+                    }
+                } finally {
+                    browseBtn.disabled = false;
+                }
+            });
+        }
         
         editModal.querySelector('.config-modal__key-reveal').addEventListener('click', () => {
             const keyInput = editModal.querySelector('#_edit_ws_key');

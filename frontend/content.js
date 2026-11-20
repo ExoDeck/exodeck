@@ -1,52 +1,73 @@
 // content.js — Main content area
 import { state, apiFetch, withLocation, refreshPages, isHelpWorkspace } from './app.js';
-import { renderGroup } from './groupbox.js';
-import { renderNoteContent } from './note.js';
+import { renderGroup, createNewStickyNoteCard } from './groupbox.js';
+import { buildGroupHeightKey, getGroupOccurrenceIndex, migrateGroupMaxHeight, syncGridRowFloors } from './groupbox-resize.js';
+import { renderNoteContent, cleanupActiveNoteEditor } from './note.js';
 import { renderWhiteboardPage, unmountWhiteboard } from './whiteboard.js';
 import { renderBpmnPage, unmountBpmn } from './bpmn.js';
 import { isEditModeActive, enterEditMode, exitEditMode, reAttachIfActive } from './reorganize.js';
-import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility } from './sidebar.js';
+import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs } from './sidebar.js';
 import { openConfirmModal } from './modal.js';
 
 let editEscListener = null;
+
+function detachEditEscListener() {
+  if (editEscListener) {
+    document.removeEventListener('keydown', editEscListener);
+    editEscListener = null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Add Group modal
 // ---------------------------------------------------------------------------
 
-function startInlineGroupCreation() {
+export function startInlineGroupCreation(groupType = 'group') {
+  if (isHelpWorkspace(state.currentLocation)) return;
   const grid = document.getElementById('pageGrid');
-  const addCard = grid.querySelector('.group-card--add');
-  if (!addCard) return;
+  if (!grid) return;
+  const addControl = document.getElementById('gridAddGroup');
+
+  if (groupType === 'sticky') {
+    const { card, focusTarget } = createNewStickyNoteCard(state.currentSlug, state.currentLocation);
+    if (addControl) {
+      addControl.replaceWith(card);
+    } else {
+      grid.appendChild(card);
+    }
+    card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    focusTarget.focus();
+    return;
+  }
 
   const card = document.createElement('div');
   card.className = 'group-card group-card--focused';
-  
+
   const header = document.createElement('div');
   header.className = 'group-card__header';
-  
+
   const titleEl = document.createElement('h2');
   titleEl.className = 'group-card__title group-card__title--editing';
   titleEl.setAttribute('contenteditable', 'plaintext-only');
-  titleEl.setAttribute('placeholder', 'New Group');
-  titleEl.textContent = 'New Group';
   titleEl.style.outline = 'none';
-  
+
   header.appendChild(titleEl);
   card.appendChild(header);
 
-  addCard.replaceWith(card);
-  
+  if (addControl) {
+    addControl.replaceWith(card);
+  } else {
+    grid.appendChild(card);
+  }
+
   titleEl.focus();
-  
-  const range = document.createRange();
-  range.selectNodeContents(titleEl);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  
+
   let isSaving = false;
-  
+
+  const cancel = () => {
+    renderPage(state.currentPage);
+  };
+
   const finish = async () => {
     if (isSaving) return;
     const name = titleEl.textContent.trim();
@@ -63,20 +84,16 @@ function startInlineGroupCreation() {
       });
       const updated = await apiFetch(withLocation(`/pages/${slug}`));
       state.currentPage = updated;
-      
+
       if (updated.groups && updated.groups.length > 0) {
         card.dataset.groupIndex = String(updated.groups.length - 1);
       }
-      
+
       renderPage(state.currentPage);
     } catch (err) {
       console.error(err);
       renderPage(state.currentPage);
     }
-  };
-
-  const cancel = () => {
-    renderPage(state.currentPage);
   };
 
   titleEl.addEventListener('keydown', async (e) => {
@@ -86,7 +103,7 @@ function startInlineGroupCreation() {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       const name = titleEl.textContent.trim();
-      if (name && name !== 'New Group') {
+      if (name) {
         const discard = await openConfirmModal();
         if (!discard) {
           titleEl.focus();
@@ -109,8 +126,13 @@ function saveGroupTitles(page) {
     const groupTitleEl = card.querySelector('.group-card__title');
     if (!groupTitleEl) return;
     const newTitle = groupTitleEl.textContent.trim() || 'Untitled Group';
-    if (page.groups?.[idx]?.title !== newTitle) {
+    const oldTitle = page.groups?.[idx]?.title;
+    if (oldTitle !== newTitle && page.groups?.[idx]) {
+      const occ = getGroupOccurrenceIndex(page.groups, idx);
+      const oldKey = buildGroupHeightKey(state.currentLocation, state.currentSlug, oldTitle ?? '', occ);
       page.groups[idx].title = newTitle;
+      const newOcc = getGroupOccurrenceIndex(page.groups, idx);
+      migrateGroupMaxHeight(oldKey, buildGroupHeightKey(state.currentLocation, state.currentSlug, newTitle, newOcc));
       changed = true;
     }
     groupTitleEl.textContent = page.groups[idx].title;
@@ -298,42 +320,52 @@ function setupPageActions(page) {
     return false;
   };
 
+  let isCancelling = false;
+
   const cancelEdit = async () => {
-    if (isEditModeActive()) {
+    if (!isEditModeActive() || isCancelling) return;
+    isCancelling = true;
+    try {
       if (isGridEditDirty()) {
         const discard = await openConfirmModal();
         if (!discard) return;
       }
       exitEditMode();
-      if (editEscListener) {
-        document.removeEventListener('keydown', editEscListener);
-        editEscListener = null;
-      }
+      detachEditEscListener();
       const titleEl2 = document.getElementById('pageTitle');
       if (titleEl2) {
         titleEl2.removeAttribute('contenteditable');
         titleEl2.classList.remove('content__title--editing');
       }
       renderPage(state.currentPage);
+    } finally {
+      isCancelling = false;
     }
   };
 
   cancelBtn.addEventListener('click', () => { void cancelEdit(); });
 
-  if (editEscListener) {
-    document.removeEventListener('keydown', editEscListener);
-    editEscListener = null;
-  }
-
-  editEscListener = (e) => {
-    if (isEditModeActive() && e.key === 'Escape') {
-      e.preventDefault();
-      void cancelEdit();
-    }
+  const onEditEscape = (e) => {
+    if (!isEditModeActive() || e.key !== 'Escape') return;
+    if (document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden]), .group-card__menu:not([hidden])')) return;
+    const floatingNav = document.getElementById('floatingNav');
+    if (floatingNav && !floatingNav.hasAttribute('hidden')) return;
+    const notifOverlay = document.getElementById('notificationOverlay');
+    if (notifOverlay && !notifOverlay.hasAttribute('hidden')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void cancelEdit();
   };
 
-  if (isEditModeActive()) {
+  const attachEditEscListener = () => {
+    detachEditEscListener();
+    editEscListener = onEditEscape;
     document.addEventListener('keydown', editEscListener);
+  };
+
+  detachEditEscListener();
+  if (isEditModeActive()) {
+    attachEditEscListener();
   }
 
   editBtn.addEventListener('click', async () => {
@@ -341,14 +373,12 @@ function setupPageActions(page) {
       await saveTitleAndGroups(page);
       page = state.currentPage; // Update local reference after save
       exitEditMode();
-      if (editEscListener) {
-        document.removeEventListener('keydown', editEscListener);
-        editEscListener = null;
-      }
+      detachEditEscListener();
       cancelBtn.style.display = 'none';
     } else {
       enterEditMode();
       enterEditUI(editBtn);
+      attachEditEscListener();
       cancelBtn.style.display = 'inline-flex';
     }
     editBtn.title = isEditModeActive() ? 'Save (Ctrl+S)' : 'Edit (e)';
@@ -367,21 +397,89 @@ function setupPageActions(page) {
   }
 }
 
-function createAddGroupCard() {
-  const addCard = document.createElement('div');
-  addCard.className = 'group-card group-card--add';
+function createAddGroupControl() {
+  const wrap = document.createElement('div');
+  wrap.className = 'grid-add-group';
+  wrap.id = 'gridAddGroup';
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
-  addBtn.className = 'group-card__add-btn';
-  addBtn.setAttribute('aria-label', 'Add group');
-  addBtn.innerHTML = `
-    <span class="group-card__add-icon"><span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">add</span></span>
-    <span class="group-card__add-label">Add Group</span>
-  `;
-  addBtn.addEventListener('click', () => startInlineGroupCreation());
-  addCard.appendChild(addBtn);
-  return addCard;
+  addBtn.className = 'btn btn--circle grid-add-group__btn';
+  addBtn.id = 'gridAddGroupBtn';
+  addBtn.setAttribute('aria-label', 'Add group or sticky note');
+  addBtn.title = 'Add Group or Sticky Note';
+  addBtn.setAttribute('aria-expanded', 'false');
+  addBtn.setAttribute('aria-haspopup', 'menu');
+  addBtn.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">add</span>';
+
+  const menu = document.createElement('ul');
+  menu.className = 'group-card__menu grid-add-group__menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+
+  const options = [
+    { action: 'add-group', label: 'Add Group', icon: 'folder' },
+    { action: 'add-sticky', label: 'Add Sticky Note', icon: 'sticky_note' },
+  ];
+
+  for (const opt of options) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
+    btn.dataset.action = opt.action;
+    btn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: bottom;" aria-hidden="true">${opt.icon}</span>${opt.label}`;
+    li.appendChild(btn);
+    menu.appendChild(li);
+  }
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    addBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onOutsideClick);
+    document.removeEventListener('keydown', onEscape);
+  };
+
+  function onOutsideClick(e) {
+    if (!wrap.contains(e.target)) {
+      closeMenu();
+    }
+  }
+
+  function onEscape(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      addBtn.focus();
+    }
+  }
+
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!menu.hidden) {
+      closeMenu();
+      return;
+    }
+    menu.hidden = false;
+    addBtn.setAttribute('aria-expanded', 'true');
+    setTimeout(() => {
+      document.addEventListener('click', onOutsideClick);
+      document.addEventListener('keydown', onEscape);
+    }, 0);
+  });
+
+  menu.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    closeMenu();
+    startInlineGroupCreation(btn.dataset.action === 'add-sticky' ? 'sticky' : 'group');
+  });
+
+  wrap.appendChild(addBtn);
+  wrap.appendChild(menu);
+  return wrap;
 }
 
 function renderGroupCards(grid, groups) {
@@ -406,16 +504,10 @@ function renderGroupCards(grid, groups) {
   }
 }
 
-function restoreGridFocus(grid, { wasAddGroupFocused, savedGroupIndex, savedItemIndex }) {
+function restoreGridFocus(grid, { savedGroupIndex, savedItemIndex }) {
+  if (savedGroupIndex === null) return;
   const allCards = grid.querySelectorAll('.group-card');
-  if (allCards.length === 0) return;
-
-  let cardToFocus = null;
-  if (wasAddGroupFocused) {
-    cardToFocus = grid.querySelector('.group-card--add');
-  } else if (savedGroupIndex !== null) {
-    cardToFocus = Array.from(allCards).find(c => c.dataset.groupIndex === savedGroupIndex) ?? null;
-  }
+  const cardToFocus = Array.from(allCards).find(c => c.dataset.groupIndex === savedGroupIndex) ?? null;
 
   if (!cardToFocus) return;
 
@@ -435,24 +527,29 @@ function renderPageGrid(page) {
   const savedGroupIndex = focusedCard?.dataset.groupIndex ?? null;
   const focusedItem = grid.querySelector('.item--focused');
   const savedItemIndex = focusedItem?.dataset.itemIndex ?? null;
-  const wasAddGroupFocused = Boolean(focusedCard?.classList.contains('group-card--add'));
 
   grid.innerHTML = '';
 
   renderGroupCards(grid, page.groups ?? []);
 
   if (!isHelpWorkspace(state.currentLocation)) {
-    grid.appendChild(createAddGroupCard());
+    grid.appendChild(createAddGroupControl());
   }
 
-  restoreGridFocus(grid, { wasAddGroupFocused, savedGroupIndex, savedItemIndex });
+  syncGridRowFloors(grid);
+  restoreGridFocus(grid, { savedGroupIndex, savedItemIndex });
 }
 
 export function renderPage(page) {
+  cleanupActiveNoteEditor();
+  state.activeGridNote = null;
+  setHeaderBreadcrumbs(null);
   updateSidebarVisibility(page.page_type);
 
   // Whiteboard pages have their own renderer
   if (page.page_type === 'whiteboard') {
+    detachEditEscListener();
+    if (isEditModeActive()) exitEditMode();
     unmountBpmn();
     document.getElementById('content')?.classList.remove('content--bpmn');
     void renderWhiteboardPage(page, state.currentSlug, state.currentLocation);
@@ -465,6 +562,8 @@ export function renderPage(page) {
 
   // Business Process pages have their own renderer
   if (page.page_type === 'bpmn') {
+    detachEditEscListener();
+    if (isEditModeActive()) exitEditMode();
     void renderBpmnPage(page, state.currentSlug, state.currentLocation);
     return;
   }
@@ -475,6 +574,8 @@ export function renderPage(page) {
 
   // Note pages have their own renderer
   if (page.page_type === 'note') {
+    detachEditEscListener();
+    if (isEditModeActive()) exitEditMode();
     renderNoteContent(page);
     return;
   }

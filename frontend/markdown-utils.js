@@ -5,44 +5,66 @@ let rendererInitialized = false;
 let depsLoadingPromise = null;
 
 function isExternalHref(href) {
-  return /^(https?:\/\/|mailto:|tel:|data:|javascript:)/i.test(href);
+  return /^(mailto:|tel:|data:|javascript:)/i.test(href);
 }
 
-function normalizeWorkspacePath(pathname) {
-  const clean = pathname.startsWith('/') ? pathname : `/${pathname}`;
-  const segments = clean.split('/').filter(Boolean);
-  if (segments.length === 0) return null;
-
-  // If link is a bare slug path (e.g. /page-a or page-a), scope it to current workspace.
-  if (segments.length === 1 && state.currentLocation) {
-    return `/${state.currentLocation}/${segments[0]}`;
+function safeDecodeSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
   }
-
-  return clean;
 }
 
 function resolveInternalPageTarget(rawHref) {
-  if (!rawHref || rawHref.startsWith('#') || isExternalHref(rawHref)) return null;
-
-  let pathname;
-  if (rawHref.startsWith('/')) {
-    pathname = rawHref;
-  } else {
-    const basePath = state.currentLocation ? `/${state.currentLocation}/` : '/';
-    pathname = new URL(rawHref, `${window.location.origin}${basePath}`).pathname;
+  if (!rawHref || typeof rawHref !== 'string' || rawHref.startsWith('#') || isExternalHref(rawHref)) {
+    return null;
   }
 
-  const normalizedPath = normalizeWorkspacePath(pathname);
-  if (!normalizedPath) return null;
+  let pathname = rawHref.trim();
+  if (!pathname) return null;
 
-  const segments = normalizedPath.split('/').filter(Boolean);
-  if (segments.length < 2) return null;
+  if (/^https?:\/\//i.test(pathname)) {
+    try {
+      const parsed = new URL(pathname);
+      if (parsed.origin !== window.location.origin) return null;
+      pathname = parsed.pathname;
+    } catch {
+      return null;
+    }
+  } else if (!pathname.startsWith('/')) {
+    try {
+      const basePath = state.currentLocation ? `/${state.currentLocation}/` : '/';
+      pathname = new URL(pathname, `${window.location.origin}${basePath}`).pathname;
+    } catch {
+      return null;
+    }
+  }
 
-  const [location, slug] = segments;
-  const exists = state.pages.some(p => p.location === location && p.slug === slug);
-  if (!exists) return null;
+  const segments = pathname.split('/').filter(Boolean).map(safeDecodeSegment);
+  if (segments.length === 0) return null;
 
-  return { location, slug, path: `/${location}/${slug}` };
+  let matched;
+  if (segments.length >= 2) {
+    const locLower = segments[0].toLowerCase();
+    const slugLower = segments[1].toLowerCase();
+    matched = state.pages.find(
+      p => (p.location ?? '').toLowerCase() === locLower && (p.slug ?? '').toLowerCase() === slugLower
+    ) ?? null;
+  } else {
+    const slugLower = segments[0].toLowerCase();
+    matched = state.pages.find(
+      p => (p.slug ?? '').toLowerCase() === slugLower && p.location === state.currentLocation
+    ) ?? state.pages.find(p => (p.slug ?? '').toLowerCase() === slugLower) ?? null;
+  }
+
+  if (!matched) return null;
+
+  return {
+    location: matched.location ?? null,
+    slug: matched.slug,
+    path: matched.location ? `/${matched.location}/${matched.slug}` : `/${matched.slug}`,
+  };
 }
 
 async function loadScript(src) {
@@ -149,6 +171,9 @@ function initRenderer() {
 
     let out = `<a href="${href}"`;
     if (title) out += ` title="${title}"`;
+    if (!target && href && !href.startsWith('#')) {
+      out += ' target="_blank" rel="noopener noreferrer"';
+    }
     out += `>${text ?? ''}</a>`;
     return out;
   };
@@ -363,6 +388,19 @@ export async function renderMarkdownToElement(markdown, containerElement, option
   // Parse markdown
   containerElement.innerHTML = marked.parse(markdown || '');
 
+  // Ensure external links open in a new tab and internal page links stay in the same tab.
+  containerElement.querySelectorAll('a[href]').forEach(anchor => {
+    const href = anchor.getAttribute('href') ?? '';
+    const target = resolveInternalPageTarget(href);
+    if (target) {
+      anchor.setAttribute('href', target.path);
+      anchor.removeAttribute('target');
+    } else if (href && !href.startsWith('#')) {
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+
   // Assign IDs to headings for outline navigation
   const headings = containerElement.querySelectorAll('h1, h2, h3, h4, h5, h6');
   headings.forEach((h, index) => {
@@ -421,18 +459,17 @@ export async function renderMarkdownToElement(markdown, containerElement, option
       return;
     }
 
-    // Update the raw markdown in state.currentPage.rawMarkdown and save it
-    if (state.currentPage?.page_type === 'note') {
+    // Update the raw markdown in the active Note Page or Grid Note and save it
+    const { isActiveNoteView, getActiveNoteMarkdown, saveActiveNoteMarkdown } = await import('./note.js');
+    if (isActiveNoteView()) {
       const checkboxes = Array.from(containerElement.querySelectorAll('.task-list-checkbox'));
       const index = checkboxes.indexOf(event.target);
       if (index === -1) return;
-      
-      const newRaw = updateMarkdownCheckbox(state.currentPage.rawMarkdown, index, isChecked);
-      state.currentPage.rawMarkdown = newRaw;
-      
+
+      const newRaw = updateMarkdownCheckbox(getActiveNoteMarkdown(), index, isChecked);
+
       try {
-        const { callSaveApi } = await import('./note.js');
-        await callSaveApi(newRaw, state.currentSlug, false, state.currentLocation);
+        await saveActiveNoteMarkdown(newRaw);
       } catch (err) {
         console.error('Failed to save checkbox state', err);
         event.target.checked = !isChecked; // revert UI
@@ -697,7 +734,10 @@ function initTableEditing(containerElement) {
   tables.forEach((table, index) => {
     if (table.closest('.md-table-wrapper')) return;
 
-    const autoSumKey = `${state.currentLocation ?? ''}:${state.currentSlug ?? ''}:${index}`;
+    const gridNoteKey = state.activeGridNote
+      ? `${state.activeGridNote.groupIndex}:${state.activeGridNote.itemIndex}:`
+      : '';
+    const autoSumKey = `${state.currentLocation ?? ''}:${state.currentSlug ?? ''}:${gridNoteKey}${index}`;
 
     const wrapper = document.createElement('div');
     wrapper.className = 'md-table-wrapper';
@@ -964,7 +1004,9 @@ function initTableEditing(containerElement) {
       cancelBtn.style.display = '';
       saveBtn.style.display = '';
 
-      const raw = state.currentPage?.rawMarkdown || '';
+      const raw = state.activeGridNote
+        ? (state.activeGridNote.rawMarkdown || '')
+        : (state.currentPage?.rawMarkdown || '');
       const lines = raw.split('\n');
       const { tableStart, tableEnd } = parseTableBoundaries(lines, index);
 
@@ -1127,7 +1169,8 @@ function initTableEditing(containerElement) {
         }
       });
 
-      let raw = state.currentPage?.rawMarkdown;
+      const { getActiveNoteMarkdown, saveActiveNoteMarkdown, renderNoteContent } = await import('./note.js');
+      const raw = getActiveNoteMarkdown();
       if (!raw) return;
       const lines = raw.split('\n');
       const tableStart = Number.parseInt(wrapper.dataset.tableStart, 10);
@@ -1141,10 +1184,8 @@ function initTableEditing(containerElement) {
         cancelBtn.disabled = true;
 
         try {
-          const { callSaveApi } = await import('./note.js');
-          await callSaveApi(newRaw, state.currentSlug, false, state.currentLocation);
+          await saveActiveNoteMarkdown(newRaw);
 
-          state.currentPage.rawMarkdown = newRaw;
           isEditing = false;
           wrapper.classList.remove('md-table-editing');
           editBtn.style.display = isReadOnlyDoc ? 'none' : '';
@@ -1152,7 +1193,6 @@ function initTableEditing(containerElement) {
           saveBtn.style.display = 'none';
 
           // Just triggering an update of the content view
-          const { renderNoteContent } = await import('./note.js');
           renderNoteContent(state.currentPage);
 
         } catch (err) {

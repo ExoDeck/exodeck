@@ -1,6 +1,7 @@
 // whiteboard.js — Whiteboard page type using Excalidraw (lazy-loaded from CDN)
 import { state, withLocation, refreshPages, isHelpWorkspace, showStyledConfirmModal } from './app.js';
-import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility } from './sidebar.js';
+import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs } from './sidebar.js';
+import { cleanupActiveNoteEditor } from './note.js';
 import { showErrorBubble, parseApiError, createEditorActionButtons, handleTabNavigation, navigateAfterPageCancel, validateNewPageTitle } from './ui-utils.js';
 import { openConfirmModal } from './modal.js';
 
@@ -453,6 +454,9 @@ export function createWhiteboardPage(targetLocation = null) {
     });
     return;
   }
+  cleanupActiveNoteEditor();
+  state.activeGridNote = null;
+  setHeaderBreadcrumbs(null);
   updateSidebarVisibility('whiteboard');
   const contentEl = document.getElementById('content');
   const titleEl   = document.getElementById('pageTitle');

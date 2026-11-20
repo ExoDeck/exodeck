@@ -100,8 +100,8 @@ func NewServer(store *storage.Store, configDir string, gitRunner GitRunner, vers
 		ConfigDir: configDir,
 		GitRunner: gitRunner,
 		Version:   version,
-		tools:     make([]Tool, 0, 40),
-		handlers:  make(map[string]ToolHandler, 40),
+		tools:     make([]Tool, 0, 44),
+		handlers:  make(map[string]ToolHandler, 44),
 	}
 	s.registerAllTools()
 	return s

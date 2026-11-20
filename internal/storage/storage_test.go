@@ -1247,3 +1247,56 @@ func TestGetAllTasksVariousDateFormats(t *testing.T) {
 		t.Errorf("expected at least 6 tasks, got %d", len(tasks))
 	}
 }
+
+func TestStickyNoteDueNotificationsAndTaskStatus(t *testing.T) {
+	store, dir := makeStore(t)
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	todayStr := today.Format("2006-01-02")
+	tomorrowStr := today.Add(24 * time.Hour).Format("2006-01-02")
+	futureStr := today.Add(72 * time.Hour).Format("2006-01-02")
+
+	stickyType := "sticky"
+	text := "Note text"
+
+	pageDueSoon := models.Page{
+		PageName: "Soon Stickies",
+		Groups: []models.Group{
+			{Title: "Soon Sticky", Type: &stickyType, Text: &text, DueDate: &tomorrowStr},
+			{Title: "Future Sticky", Type: &stickyType, Text: &text, DueDate: &futureStr},
+			{Title: "No Due Sticky", Type: &stickyType, Text: &text},
+		},
+	}
+	if st := storage.GetPageTaskStatus(pageDueSoon); st != "due_soon" {
+		t.Errorf("GetPageTaskStatus(pageDueSoon) = %q, want 'due_soon'", st)
+	}
+
+	pageOverdue := models.Page{
+		PageName: "Overdue Stickies",
+		Groups: []models.Group{
+			{Title: "Soon Sticky", Type: &stickyType, Text: &text, DueDate: &tomorrowStr},
+			{Title: "Overdue Sticky", Type: &stickyType, Text: &text, DueDate: &todayStr},
+		},
+	}
+	if st := storage.GetPageTaskStatus(pageOverdue); st != "overdue" {
+		t.Errorf("GetPageTaskStatus(pageOverdue) = %q, want 'overdue'", st)
+	}
+
+	writeJSON(t, filepath.Join(dir, "soon-stickies.grid"), pageDueSoon)
+	writeJSON(t, filepath.Join(dir, "overdue-stickies.grid"), pageOverdue)
+	store.InitCache()
+
+	due := store.GetDueTasks()
+	if len(due) != 3 {
+		t.Fatalf("expected 3 due sticky entries, got %d: %+v", len(due), due)
+	}
+	if due[0].Title != "Overdue Sticky" || due[0].DueStatus != "overdue" || due[0].ItemType != "sticky" || due[0].ItemIndex != -1 {
+		t.Errorf("unexpected first due entry: %+v", due[0])
+	}
+
+	// Sticky notes must NOT appear in GetAllTasks()
+	all := store.GetAllTasks()
+	if len(all) != 0 {
+		t.Errorf("expected sticky notes to be excluded from GetAllTasks(), got %+v", all)
+	}
+}

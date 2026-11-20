@@ -74,7 +74,7 @@ function buildField(field) {
 
   if (field.onBlur) input.addEventListener('blur', field.onBlur);
 
-  if (!field.copyable) {
+  if (!field.copyable && !field.clearable) {
     return { label, input, wrapper: input };
   }
 
@@ -83,23 +83,41 @@ function buildField(field) {
   wrapper.style.gap = '8px';
   wrapper.style.alignItems = 'center';
   input.style.flex = '1';
-  
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.className = 'btn btn--ghost';
-  copyBtn.style.padding = '0 8px';
-  copyBtn.title = 'Copy to clipboard';
-  copyBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px;">content_copy</span>';
-  copyBtn.addEventListener('click', () => {
-    const textToCopy = field.type === 'static' ? input.textContent : input.value;
-    navigator.clipboard.writeText(textToCopy).catch(console.error);
-    const orig = copyBtn.innerHTML;
-    copyBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px; color: #4caf50;">check</span>';
-    setTimeout(() => { copyBtn.innerHTML = orig; }, 1500);
-  });
 
   wrapper.appendChild(input);
-  wrapper.appendChild(copyBtn);
+
+  if (field.clearable) {
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'btn btn--ghost';
+    clearBtn.style.padding = '0 8px';
+    clearBtn.title = 'Clear';
+    clearBtn.setAttribute('aria-label', `Clear ${field.label}`);
+    clearBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px;">close</span>';
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      input.focus();
+    });
+    wrapper.appendChild(clearBtn);
+  }
+
+  if (field.copyable) {
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'btn btn--ghost';
+    copyBtn.style.padding = '0 8px';
+    copyBtn.title = 'Copy to clipboard';
+    copyBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px;">content_copy</span>';
+    copyBtn.addEventListener('click', () => {
+      const textToCopy = field.type === 'static' ? input.textContent : input.value;
+      navigator.clipboard.writeText(textToCopy).catch(console.error);
+      const orig = copyBtn.innerHTML;
+      copyBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px; color: #4caf50;">check</span>';
+      setTimeout(() => { copyBtn.innerHTML = orig; }, 1500);
+    });
+    wrapper.appendChild(copyBtn);
+  }
+
   return { label, input, wrapper };
 }
 

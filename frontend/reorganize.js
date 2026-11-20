@@ -1,6 +1,7 @@
 // reorganize.js — Edit/Reorganize mode for groups and items
 import { state, apiFetch, withLocation } from './app.js';
 import { renderPage } from './content.js';
+import { buildGroupHeightKey, getGroupOccurrenceIndex, migrateGroupMaxHeight } from './groupbox-resize.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -335,7 +336,7 @@ function _attachItemDragEvents() {
 // ---------------------------------------------------------------------------
 
 function _attachGroupDropZones() {
-  const cards = document.querySelectorAll('.group-card:not(.group-card--add)');
+  const cards = document.querySelectorAll('.group-card:not(.group-card--add):not(.group-card--sticky)');
   for (const card of cards) {
     const list = card.querySelector('.group-card__items');
 
@@ -509,6 +510,18 @@ function _attachItemReorderZones() {
 // ---------------------------------------------------------------------------
 
 async function _moveGroupToPage(sourceSlug, sourceLocation, groupIndex, targetSlug, targetLocation) {
+  const movedGroup =
+    sourceSlug === state.currentSlug && (sourceLocation ?? null) === (state.currentLocation ?? null)
+      ? state.currentPage?.groups?.[groupIndex]
+      : null;
+  const oldHeightKey = movedGroup
+    ? buildGroupHeightKey(
+        sourceLocation,
+        sourceSlug,
+        movedGroup.title ?? '',
+        getGroupOccurrenceIndex(state.currentPage?.groups, groupIndex)
+      )
+    : null;
 
   try {
     await apiFetch(
@@ -518,6 +531,9 @@ async function _moveGroupToPage(sourceSlug, sourceLocation, groupIndex, targetSl
         body: JSON.stringify({ target_slug: targetSlug, target_location: targetLocation }),
       }
     );
+    if (oldHeightKey && movedGroup) {
+      migrateGroupMaxHeight(oldHeightKey, buildGroupHeightKey(targetLocation, targetSlug, movedGroup.title ?? '', 0));
+    }
     // Reload and re-render if the move was from the currently displayed page
     if (
       sourceSlug === state.currentSlug &&

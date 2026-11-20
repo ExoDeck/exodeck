@@ -109,12 +109,12 @@ func (s *Server) registerWorkspaceTools() {
 	// 8. search
 	s.registerTool(
 		"search",
-		"Search across ExoDeck workspaces for pages (grid, note, whiteboard, bpmn) and grid items (links, notes, tasks).",
+		"Search across ExoDeck workspaces for pages (grid, note, whiteboard, bpmn), sticky notes, and grid items (links, notes, tasks).",
 		objectSchema(map[string]interface{}{
 			"query":          stringProp("Case-insensitive search query string."),
 			"workspace":      stringProp("Optional workspace name to restrict the search to."),
 			"page_type":      stringEnumProp("Optional page type filter ('grid', 'note', 'whiteboard', 'bpmn').", "grid", "note", "whiteboard", "bpmn"),
-			"item_type":      stringEnumProp("Optional grid item type filter ('link', 'note', 'task').", "link", "note", "task"),
+			"item_type":      stringEnumProp("Optional grid entry type filter ('link', 'note', 'task', 'sticky').", "link", "note", "task", "sticky"),
 			"include_hidden": boolProp("Include hidden workspaces and hidden pages in search results (default: false)."),
 		}, "query"),
 		s.toolSearch,
@@ -726,6 +726,27 @@ func (s *Server) searchGridPageItems(ws string, meta models.PageMeta, lowerQuery
 	}
 	for gIdx, group := range page.Groups {
 		groupMatches := strings.Contains(strings.ToLower(group.Title), lowerQuery)
+		if isStickyGroup(group) {
+			if itemTypeFilter == "" || strings.EqualFold(itemTypeFilter, "sticky") {
+				matched := groupMatches || strings.Contains(strings.ToLower(meta.PageName), lowerQuery)
+				if !matched && group.Text != nil && strings.Contains(strings.ToLower(*group.Text), lowerQuery) {
+					matched = true
+				}
+				if matched {
+					loc := ws
+					*out = append(*out, models.SearchResult{
+						Location:   &loc,
+						Slug:       meta.Slug,
+						PageName:   meta.PageName,
+						GroupIndex: gIdx,
+						ItemIndex:  -1,
+						Title:      group.Title,
+						ItemType:   "sticky",
+					})
+				}
+			}
+			continue
+		}
 		for iIdx, item := range group.Items {
 			// Never expose or search inside encrypted/password item secrets
 			if isSensitiveItem(item) {

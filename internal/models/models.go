@@ -38,10 +38,16 @@ func (it *Item) ItemType() string {
 	return "note"
 }
 
-// Group is a named collection of items.
+// Group is a named collection of items or a sticky note on a grid page.
 type Group struct {
-	Title string `json:"title"`
-	Items []Item `json:"items"`
+	Title      string  `json:"title"`
+	Type       *string `json:"type,omitempty"`
+	Text       *string `json:"text,omitempty"`
+	Color      *string `json:"color,omitempty"`
+	DueDate    *string `json:"due_date,omitempty"`
+	CreatedAt  *string `json:"created_at,omitempty"`
+	ModifiedAt *string `json:"modified_at,omitempty"`
+	Items      []Item  `json:"items"`
 }
 
 // Page is the top-level document stored as one JSON file in the data directory.
@@ -89,7 +95,7 @@ type SearchResult struct {
 	ItemType   string  `json:"item_type"`
 }
 
-// DueTask represents a single task item that is due or overdue across workspaces.
+// DueTask represents a single task item or sticky note that is due or overdue across workspaces.
 type DueTask struct {
 	Location   string `json:"location"`
 	Slug       string `json:"slug"`
@@ -100,9 +106,10 @@ type DueTask struct {
 	Title      string `json:"title"`
 	DueDate    string `json:"due_date"`
 	DueStatus  string `json:"due_status"` // "overdue" or "due_soon"
+	ItemType   string `json:"item_type,omitempty"`
 }
 
-// TaskIndexItem represents an unchecked task item indexed in memory.
+// TaskIndexItem represents an unchecked task item or sticky note with due date indexed in memory.
 type TaskIndexItem struct {
 	Location    string `json:"location"`
 	Slug        string `json:"slug"`
@@ -115,6 +122,7 @@ type TaskIndexItem struct {
 	TaskChecked bool   `json:"task_checked"`
 	TaskCreated string `json:"task_created,omitempty"`
 	CreatedAt   string `json:"created_at,omitempty"`
+	ItemType    string `json:"item_type,omitempty"`
 }
 
 // Task represents a single task item across workspaces.

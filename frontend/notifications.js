@@ -114,8 +114,13 @@ function updateBadgeAndPanel() {
   btn.classList.toggle('notification--due-soon', !isUrgent);
 
   const parts = [];
-  if (dueTasks.length > 0) {
-    parts.push(`${dueTasks.length} task${dueTasks.length === 1 ? '' : 's'}`);
+  const taskCount = dueTasks.filter(t => t.item_type !== 'sticky').length;
+  const stickyCount = dueTasks.filter(t => t.item_type === 'sticky').length;
+  if (taskCount > 0) {
+    parts.push(`${taskCount} task${taskCount === 1 ? '' : 's'}`);
+  }
+  if (stickyCount > 0) {
+    parts.push(`${stickyCount} sticky note${stickyCount === 1 ? '' : 's'}`);
   }
   if (syncWorkspaces.length > 0) {
     parts.push(`${syncWorkspaces.length} workspace${syncWorkspaces.length === 1 ? '' : 's'} requiring git sync`);
@@ -199,14 +204,35 @@ export function updateSyncNotifications(syncStatusMap) {
   updateBadgeAndPanel();
 }
 
-function highlightTaskOnGrid(task) {
+function highlightTaskOnGrid(entry) {
   setTimeout(() => {
+    if (entry.item_type === 'sticky') {
+      let cardEl = document.querySelector(
+        `.group-card--sticky[data-group-index="${entry.group_index}"]`
+      );
+      if (!cardEl) {
+        cardEl = Array.from(document.querySelectorAll('.group-card--sticky')).find(
+          el => el.querySelector('.group-card__title')?.textContent?.trim() === entry.title.trim()
+        );
+      }
+      if (cardEl) {
+        document.querySelectorAll('.group-card--focused, .item--focused').forEach(el => {
+          el.classList.remove('group-card--focused', 'item--focused');
+        });
+        cardEl.classList.add('group-card--focused');
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        cardEl.classList.add('group-card--notif-highlight');
+        setTimeout(() => cardEl.classList.remove('group-card--notif-highlight'), 2200);
+      }
+      return;
+    }
+
     let itemEl = document.querySelector(
-      `.item[data-group-index="${task.group_index}"][data-item-index="${task.item_index}"]`
+      `.item[data-group-index="${entry.group_index}"][data-item-index="${entry.item_index}"]`
     );
     if (!itemEl) {
       itemEl = Array.from(document.querySelectorAll('.item--task')).find(
-        el => el.querySelector('.item__task-title')?.textContent?.trim() === task.title.trim()
+        el => el.querySelector('.item__task-title')?.textContent?.trim() === entry.title.trim()
       );
     }
     if (itemEl) {
@@ -264,9 +290,10 @@ function createNotificationItem(task) {
 
   const metaEl = document.createElement('div');
   metaEl.className = 'notification-item__meta';
+  const targetLabel = task.item_type === 'sticky' ? 'Sticky Note' : task.group_title;
   metaEl.textContent = task.location
-    ? `[${task.location}] ${task.page_name} › ${task.group_title}`
-    : `${task.page_name} › ${task.group_title}`;
+    ? `[${task.location}] ${task.page_name} › ${targetLabel}`
+    : `${task.page_name} › ${targetLabel}`;
 
   mainCol.appendChild(titleEl);
   mainCol.appendChild(metaEl);
@@ -448,6 +475,7 @@ function renderNotificationsList(list) {
   }
 
   const showSectionTitles = syncWorkspaces.length > 0 && dueTasks.length > 0;
+  const hasSticky = dueTasks.some(t => t.item_type === 'sticky');
   appendNotificationSection(
     list,
     showSectionTitles ? `Git Sync (${syncWorkspaces.length})` : '',
@@ -456,7 +484,7 @@ function renderNotificationsList(list) {
   );
   appendNotificationSection(
     list,
-    showSectionTitles ? `Due Tasks (${dueTasks.length})` : '',
+    showSectionTitles ? `${hasSticky ? 'Due Items' : 'Due Tasks'} (${dueTasks.length})` : '',
     dueTasks,
     createNotificationItem
   );

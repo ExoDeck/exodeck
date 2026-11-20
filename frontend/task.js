@@ -25,6 +25,24 @@ function encodeText(str) {
 }
 
 /**
+ * Compute due status for a YYYY-MM-DD date string.
+ * @param {string|undefined|null} dueDate
+ * @returns {''|'overdue'|'due_soon'}
+ */
+export function getDueStatus(dueDate) {
+  if (!dueDate) return '';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const due = new Date(`${dueDate}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return '';
+  if (due <= today) return 'overdue';
+  if (due.getTime() === tomorrow.getTime()) return 'due_soon';
+  return '';
+}
+
+/**
  * Compute the due-date CSS modifier class for a task item.
  * Returns '' when done, or when no due date.
  * @param {object} item
@@ -32,13 +50,9 @@ function encodeText(str) {
  */
 function dueDateClass(item) {
   if (item.task_checked || !item.task_due_date) return '';
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const due = new Date(item.task_due_date + 'T00:00:00');
-  if (due <= today) return 'item--task--overdue';
-  if (due.getTime() === tomorrow.getTime()) return 'item--task--due-soon';
+  const status = getDueStatus(item.task_due_date);
+  if (status === 'overdue') return 'item--task--overdue';
+  if (status === 'due_soon') return 'item--task--due-soon';
   return '';
 }
 
@@ -47,7 +61,7 @@ function dueDateClass(item) {
  * @param {string} isoDate
  * @returns {string}
  */
-function formatDate(isoDate) {
+export function formatDate(isoDate) {
   if (!isoDate) return '';
   // Try to parse as date or datetime
   const d = new Date(isoDate.includes('T') ? isoDate : isoDate + 'T00:00:00');

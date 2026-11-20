@@ -814,9 +814,9 @@ function handleOutlineKeydown(e) {
 
 function handleOKeydown(e) {
   if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target)) {
-    // Only open if we are on a note page with a pageGrid
+    // Only open if we are on a note page or full-screen grid note
     const pageType = state.currentPage?.page_type;
-    if (pageType === 'note') {
+    if (pageType === 'note' || Boolean(state.activeGridNote)) {
       e.preventDefault();
       if (e.key === 'O') {
         openOutlineNav();
@@ -839,7 +839,7 @@ function handleOKeydown(e) {
 function handleSKeydown(e) {
   if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target)) {
     const pageType = state.currentPage?.page_type;
-    if (pageType === 'note') {
+    if (pageType === 'note' || Boolean(state.activeGridNote)) {
       e.preventDefault();
       toggleOutlineSidebar();
     }

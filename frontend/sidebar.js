@@ -6,7 +6,7 @@ import {
   handleTreeNavEnd
 } from './ui-utils.js';
 import { renderPage } from './content.js';
-import { openInlineNoteEditor, printNotePage } from './note.js';
+import { openInlineNoteEditor, printNotePage, closeActiveGridNote, cleanupActiveNoteEditor } from './note.js';
 import { fetchWhiteboardPage, createWhiteboardPage, printWhiteboardPage, unmountWhiteboard } from './whiteboard.js';
 import { fetchBpmnPage, createBpmnPage, printBpmnPage, unmountBpmn } from './bpmn.js';
 import { openModal, openConfirmModal } from './modal.js';
@@ -922,14 +922,15 @@ export function renderFloatingNavWorkspaces() {
     const iconContainer = document.createElement('span');
     iconContainer.className = 'floating-nav__switcher-icon';
 
-    const defaultSvg = `<svg width="18" height="18" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <rect x="0" y="6" width="36" height="78" fill="currentColor"/>
-      <rect x="42" y="6" width="22" height="22" fill="currentColor"/>
-      <rect x="70" y="6" width="22" height="22" fill="currentColor"/>
-      <rect x="42" y="34" width="22" height="22" fill="currentColor"/>
-      <rect x="70" y="34" width="22" height="22" fill="currentColor"/>
-      <rect x="42" y="62" width="22" height="22" fill="currentColor"/>
-      <rect x="70" y="62" width="22" height="22" fill="currentColor"/>
+    const defaultSvg = `<svg width="20" height="20" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g transform="matrix(1.0068533,-1.0068533,1.0068533,1.0068533,-64.877217,64)">
+        <circle cx="64" cy="64" r="22" stroke="#4f46e5" stroke-width="8"/>
+        <rect x="51" y="14" width="26" height="34" rx="6" fill="#00e5ff"/>
+        <rect x="51" y="80" width="26" height="34" rx="6" fill="#4f46e5"/>
+        <rect x="14" y="51" width="34" height="26" rx="6" fill="#00e5ff"/>
+        <rect x="80" y="51" width="34" height="26" rx="6" fill="#4f46e5"/>
+        <circle cx="64" cy="64" r="7" fill="#00e5ff"/>
+      </g>
     </svg>`;
 
     const defaultIcon = document.createElement('span');
@@ -1258,6 +1259,41 @@ export async function loadPage(slug, location = null, historyOp = 'push') {
 // Add Note
 // ---------------------------------------------------------------------------
 
+export function setHeaderBreadcrumbs(gridNoteCtx = null) {
+  const gridPageCrumb = document.getElementById('gridPageCrumb');
+  const gridPageCrumbLabel = document.getElementById('gridPageCrumbLabel');
+  const gridGroupCrumb = document.getElementById('gridGroupCrumb');
+  const gridGroupCrumbLabel = document.getElementById('gridGroupCrumbLabel');
+  const titleCrumb = document.getElementById('pageTitleCrumb');
+  const lockIcon = document.getElementById('pageTitleLockIcon');
+
+  if (gridNoteCtx) {
+    if (gridPageCrumbLabel) gridPageCrumbLabel.textContent = gridNoteCtx.pageName ?? '';
+    if (gridPageCrumb) gridPageCrumb.hidden = false;
+    if (gridGroupCrumbLabel) gridGroupCrumbLabel.textContent = gridNoteCtx.groupTitle ?? '';
+    if (gridGroupCrumb) gridGroupCrumb.hidden = false;
+    if (lockIcon) lockIcon.hidden = !gridNoteCtx.isEncrypted;
+    if (titleCrumb) {
+      titleCrumb.classList.remove('header-crumb--2', 'header-crumb--active', 'workspace-btn--active');
+      titleCrumb.classList.add('header-crumb--4', 'header-crumb--static');
+      titleCrumb.removeAttribute('title');
+      titleCrumb.removeAttribute('role');
+      titleCrumb.tabIndex = -1;
+    }
+  } else {
+    if (gridPageCrumb) gridPageCrumb.hidden = true;
+    if (gridGroupCrumb) gridGroupCrumb.hidden = true;
+    if (lockIcon) lockIcon.hidden = true;
+    if (titleCrumb) {
+      titleCrumb.classList.remove('header-crumb--4', 'header-crumb--static');
+      titleCrumb.classList.add('header-crumb--2');
+      titleCrumb.title = 'Page Navigator (.)';
+      titleCrumb.setAttribute('role', 'button');
+      titleCrumb.tabIndex = 0;
+    }
+  }
+}
+
 export function createNote(targetLocation = null) {
   const effectiveLocation = (targetLocation && !isHelpWorkspace(targetLocation))
     ? targetLocation
@@ -1275,6 +1311,9 @@ export function createNote(targetLocation = null) {
     });
     return;
   }
+  cleanupActiveNoteEditor();
+  state.activeGridNote = null;
+  setHeaderBreadcrumbs(null);
   updateSidebarVisibility('note');
   openInlineNoteEditor({
     rawMarkdown: '',
@@ -1336,6 +1375,9 @@ export function createGridPage(targetLocation = null) {
     });
     return;
   }
+  cleanupActiveNoteEditor();
+  state.activeGridNote = null;
+  setHeaderBreadcrumbs(null);
   updateSidebarVisibility('grid');
   const contentEl = document.getElementById('content');
   const titleEl = document.getElementById('pageTitle');
@@ -1525,6 +1567,9 @@ async function deletePage(slug, name, pageType, location) {
     renderPageList();
     // If the deleted page was the active one, clear the content area
     if (state.currentSlug === slug) {
+      cleanupActiveNoteEditor();
+      state.activeGridNote = null;
+      setHeaderBreadcrumbs(null);
       state.currentSlug = null;
       state.currentPage = null;
       document.getElementById('pageGrid').innerHTML = '';
@@ -1600,6 +1645,9 @@ function showMoveToLocationModal(slug, name, pageType, location) {
         close();
         renderPageList();
         if (state.currentSlug === slug && (state.currentLocation ?? '') === (currentLocation ?? '')) {
+          cleanupActiveNoteEditor();
+          state.activeGridNote = null;
+          setHeaderBreadcrumbs(null);
           state.currentSlug = null;
           state.currentPage = null;
           document.getElementById('pageGrid').innerHTML = '';
@@ -1638,7 +1686,7 @@ export function setSidebarPinned(pinned, shouldFocus = true) {
   if (pinned && isFloatingNavOpen) {
     closeFloatingNavigator();
   }
-  if (pinned && shouldFocus && state.currentPage?.page_type === 'note') {
+  if (pinned && shouldFocus && (state.currentPage?.page_type === 'note' || Boolean(state.activeGridNote))) {
     void import('./outline-nav.js').then(m => {
       m.syncActiveOutlineItem();
       m.focusOutline();
@@ -1702,15 +1750,54 @@ export function updateSidebarVisibility(pageType) {
   void updateVaultBadge();
 }
 
+function positionFloatingNavigator() {
+  const panel = document.getElementById('floatingNavPanel');
+  if (!panel) return;
+
+  if (window.innerWidth <= 768) {
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.maxHeight = '';
+    return;
+  }
+
+  const gridPageCrumb = document.getElementById('gridPageCrumb');
+  const anchorCrumb = (gridPageCrumb && !gridPageCrumb.hidden)
+    ? gridPageCrumb
+    : document.getElementById('pageTitleCrumb');
+
+  const tail = anchorCrumb?.querySelector('.header-crumb__tail');
+  const tailRect = tail?.getBoundingClientRect();
+  const crumbRect = anchorCrumb?.getBoundingClientRect();
+
+  let left = tailRect && tailRect.width > 0
+    ? tailRect.left
+    : (crumbRect && crumbRect.width > 0 ? crumbRect.left - 12 : 16);
+  const top = crumbRect && crumbRect.height > 0 ? crumbRect.bottom + 6 : 60;
+
+  const panelWidth = panel.offsetWidth || 320;
+  if (left + panelWidth + 8 > window.innerWidth) {
+    left = window.innerWidth - panelWidth - 8;
+  }
+  if (left < 8) {
+    left = 8;
+  }
+
+  panel.style.left = `${Math.round(left)}px`;
+  panel.style.top = `${Math.round(top)}px`;
+  panel.style.maxHeight = `calc(100vh - ${Math.round(top) + 16}px)`;
+}
+
 export function openFloatingNavigator() {
   const floatingNav = document.getElementById('floatingNav');
-  const wsBtn = document.getElementById('workspaceHeader');
+  const titleCrumb = document.getElementById('pageTitleCrumb');
   if (!floatingNav) return;
 
   floatingNavLocation = state.currentLocation;
   isFloatingNavOpen = true;
   floatingNav.removeAttribute('hidden');
-  if (wsBtn) wsBtn.classList.add('workspace-btn--active');
+  if (titleCrumb && !state.activeGridNote) titleCrumb.classList.add('header-crumb--active');
+  positionFloatingNavigator();
 
   updateFloatingNavViewUI();
   initFloatingNavKeyboardFocus();
@@ -1718,15 +1805,15 @@ export function openFloatingNavigator() {
 
 export function closeFloatingNavigator() {
   const floatingNav = document.getElementById('floatingNav');
-  const wsBtn = document.getElementById('workspaceHeader');
+  const titleCrumb = document.getElementById('pageTitleCrumb');
   if (!floatingNav) return;
 
   isFloatingNavOpen = false;
   floatingNavLocation = null;
   floatingNav.setAttribute('hidden', '');
-  if (wsBtn) {
-    wsBtn.classList.remove('workspace-btn--active');
-    wsBtn.blur();
+  if (titleCrumb) {
+    titleCrumb.classList.remove('header-crumb--active', 'workspace-btn--active');
+    if (document.activeElement === titleCrumb) titleCrumb.blur();
   }
 
   const container = document.getElementById('floatingNavPageList');
@@ -2152,7 +2239,7 @@ function handleExpandCollapse(container) {
 }
 
 export function toggleSidebar() {
-  if (state.currentPage?.page_type !== 'note') return;
+  if (state.currentPage?.page_type !== 'note' && !state.activeGridNote) return;
   toggleSidebarPin();
 }
 
@@ -2210,21 +2297,55 @@ export function initSidebar() {
     void import('./workspace-nav.js').then(m => m.openWorkspaceNav()).catch(console.error);
   });
 
-  // Workspace button click and keyboard activation
+  // Workspace button click and keyboard activation (opens Workspace Selector)
   const wsHeader = document.getElementById('workspaceHeader');
   if (wsHeader) {
-    wsHeader.addEventListener('click', (e) => {
+    const toggleWorkspaceSelector = (e) => {
       if (e.target.closest('#workspaceGitDot')) return;
-      toggleFloatingNavigator();
-    });
+      void import('./workspace-nav.js').then(m => m.toggleWorkspaceNav()).catch(console.error);
+    };
+    wsHeader.addEventListener('click', toggleWorkspaceSelector);
     wsHeader.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         if (e.target.closest('#workspaceGitDot')) return;
         e.preventDefault();
-        toggleFloatingNavigator();
+        toggleWorkspaceSelector(e);
       }
     });
   }
+
+  // Page Name crumb click and keyboard activation (opens Page Navigator)
+  const titleCrumb = document.getElementById('pageTitleCrumb');
+  if (titleCrumb) {
+    const isTitleEditable = () => {
+      const titleEl = document.getElementById('pageTitle');
+      return Boolean(titleEl && (titleEl.isContentEditable || titleEl.classList.contains('content__title--editing')));
+    };
+    titleCrumb.addEventListener('click', (e) => {
+      if (isTitleEditable()) {
+        if (e.target === titleCrumb) {
+          document.getElementById('pageTitle')?.focus();
+        }
+        return;
+      }
+      if (state.activeGridNote) return;
+      toggleFloatingNavigator();
+    });
+    titleCrumb.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (isTitleEditable() || state.activeGridNote || e.target?.isContentEditable) return;
+      e.preventDefault();
+      toggleFloatingNavigator();
+    });
+  }
+
+  // Grid Page / Group crumbs in Grid Note view return to parent Grid Page
+  document.getElementById('gridPageCrumb')?.addEventListener('click', () => {
+    void closeActiveGridNote().catch(console.error);
+  });
+  document.getElementById('gridGroupCrumb')?.addEventListener('click', () => {
+    void closeActiveGridNote().catch(console.error);
+  });
 
   // Restore persisted floating nav width
   const savedFloatingWidth = localStorage.getItem(STORAGE_FLOATING_WIDTH_KEY);
@@ -2266,6 +2387,12 @@ export function initSidebar() {
       localStorage.setItem(STORAGE_FLOATING_WIDTH_KEY, current);
     });
   }
+
+  window.addEventListener('resize', () => {
+    if (isFloatingNavOpen) {
+      positionFloatingNavigator();
+    }
+  });
 
   // Interactive Git sync dot in workspace button
   const gitDot = document.getElementById('workspaceGitDot');
@@ -2486,7 +2613,7 @@ export function initSidebar() {
       document.querySelectorAll('.add-page-menu--open').forEach(el => el.classList.remove('add-page-menu--open'));
     }
     if (isFloatingNavOpen) {
-      if (!e.target.closest('#floatingNavPanel') && !e.target.closest('#workspaceHeader') && !e.target.closest('#sidebarUnpinnedStrip') && !e.target.closest('#sidebarOpenBtn') && !e.target.closest('#hamburgerMenuPanel') && !e.target.closest('#hamburgerBtn')) {
+      if (!e.target.closest('#floatingNavPanel') && !e.target.closest('#pageTitleCrumb') && !e.target.closest('#sidebarUnpinnedStrip') && !e.target.closest('#sidebarOpenBtn') && !e.target.closest('#hamburgerMenuPanel') && !e.target.closest('#hamburgerBtn')) {
         closeFloatingNavigator();
       }
     }

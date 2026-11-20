@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -11,17 +12,19 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/ExoDeck/exodeck/internal/mcp"
+	"github.com/ExoDeck/exodeck/internal/netutil"
 	"github.com/ExoDeck/exodeck/internal/storage"
 	"github.com/ExoDeck/exodeck/internal/vault"
 )
 
 // Server holds shared dependencies injected into every handler.
 type Server struct {
-	Store      *storage.Store
-	Vault      *vault.Manager
-	ConfigDir  string // path to directory containing config.json
-	FrontendFS fs.FS  // embedded or disk frontend filesystem
-	GitRunner  GitRunner
+	Store        *storage.Store
+	Vault        *vault.Manager
+	ConfigDir    string // path to directory containing config.json
+	FrontendFS   fs.FS  // embedded or disk frontend filesystem
+	GitRunner    GitRunner
+	FolderPicker func(ctx context.Context, initialDir string) (string, bool, error)
 }
 
 const (
@@ -39,15 +42,19 @@ func NewRouter(s *Server) http.Handler {
 
 	r := chi.NewRouter()
 
-	// CORS — allow all origins (same as Python backend)
+	r.Use(middleware.Recoverer)
+	r.Use(localhostOnlyMiddleware)
+
+	// CORS — allow localhost / loopback browser origins only
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowOriginFunc: func(_ *http.Request, origin string) bool {
+			return netutil.IsLocalhostOrigin(origin)
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"*"},
+		ExposedHeaders:   []string{"Mcp-Session-Id"},
 		AllowCredentials: false,
 	}))
-
-	r.Use(middleware.Recoverer)
 
 	// No-cache headers for all non-API responses
 	r.Use(noCacheStaticMiddleware)
@@ -122,6 +129,9 @@ func NewRouter(s *Server) http.Handler {
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.putConfig)
 
+		// Native OS folder picker for workspace configuration
+		r.Post("/fs/pick-folder", s.pickFolder)
+
 		// Sync
 		r.Get("/sync/status/all", s.syncStatusAll)
 		r.Get("/sync/status", s.syncStatus)
@@ -143,6 +153,29 @@ func NewRouter(s *Server) http.Handler {
 	r.Get("/*", s.serveStatic)
 
 	return r
+}
+
+// localhostOnlyMiddleware rejects non-localhost Host headers (DNS rebinding),
+// non-localhost Origin headers, and cross-site Fetch Metadata requests to APIs or state-changing endpoints.
+func localhostOnlyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !netutil.IsLocalhostHost(r.Host) {
+			jsonError(w, http.StatusForbidden, "forbidden: only localhost access is allowed")
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" && !netutil.IsLocalhostOrigin(origin) {
+			jsonError(w, http.StatusForbidden, "forbidden: cross-origin requests are only allowed from localhost")
+			return
+		}
+		if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+			isSafeMethod := r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions
+			if !isSafeMethod || isAPIPath(r.URL.Path) {
+				jsonError(w, http.StatusForbidden, "forbidden: cross-site requests are not allowed")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // noCacheStaticMiddleware sets no-cache headers on all non-/api/ responses.
