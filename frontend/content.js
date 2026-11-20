@@ -1,6 +1,7 @@
 // content.js — Main content area
 import { state, apiFetch, withLocation, refreshPages, isHelpWorkspace } from './app.js';
 import { renderGroup, createNewStickyNoteCard } from './groupbox.js';
+import { buildGroupHeightKey, getGroupOccurrenceIndex, migrateGroupMaxHeight, syncGridRowFloors } from './groupbox-resize.js';
 import { renderNoteContent, cleanupActiveNoteEditor } from './note.js';
 import { renderWhiteboardPage, unmountWhiteboard } from './whiteboard.js';
 import { renderBpmnPage, unmountBpmn } from './bpmn.js';
@@ -125,8 +126,13 @@ function saveGroupTitles(page) {
     const groupTitleEl = card.querySelector('.group-card__title');
     if (!groupTitleEl) return;
     const newTitle = groupTitleEl.textContent.trim() || 'Untitled Group';
-    if (page.groups?.[idx]?.title !== newTitle) {
+    const oldTitle = page.groups?.[idx]?.title;
+    if (oldTitle !== newTitle && page.groups?.[idx]) {
+      const occ = getGroupOccurrenceIndex(page.groups, idx);
+      const oldKey = buildGroupHeightKey(state.currentLocation, state.currentSlug, oldTitle ?? '', occ);
       page.groups[idx].title = newTitle;
+      const newOcc = getGroupOccurrenceIndex(page.groups, idx);
+      migrateGroupMaxHeight(oldKey, buildGroupHeightKey(state.currentLocation, state.currentSlug, newTitle, newOcc));
       changed = true;
     }
     groupTitleEl.textContent = page.groups[idx].title;
@@ -530,6 +536,7 @@ function renderPageGrid(page) {
     grid.appendChild(createAddGroupControl());
   }
 
+  syncGridRowFloors(grid);
   restoreGridFocus(grid, { savedGroupIndex, savedItemIndex });
 }
 

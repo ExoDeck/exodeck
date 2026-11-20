@@ -8,6 +8,14 @@ import { buildInfoTable } from './note.js';
 import { renderPasswordItem, openPasswordWindow } from './password.js';
 import { renderTaskItem, openAddTaskModal, getDueStatus, formatDate } from './task.js';
 import { canEncryptWorkspace, ensureVaultUnlocked, fetchVaultStatus } from './vault.js';
+import {
+  applyGroupHeight,
+  attachGroupResizeHandle,
+  buildGroupHeightKey,
+  clearGroupMaxHeight,
+  getGroupOccurrenceIndex,
+  migrateGroupMaxHeight,
+} from './groupbox-resize.js';
 
 export const STICKY_COLORS = [
   { id: 'yellow', label: 'Yellow' },
@@ -401,6 +409,14 @@ function buildGroupHeader(group, getMenuItems, readOnly = false) {
   titleEl.className = 'group-card__title';
   titleEl.textContent = group.title ?? '';
 
+  const resetSizeBtn = document.createElement('button');
+  resetSizeBtn.type = 'button';
+  resetSizeBtn.className = 'group-card__reset-size-btn';
+  resetSizeBtn.hidden = true;
+  resetSizeBtn.title = 'Restore default size';
+  resetSizeBtn.setAttribute('aria-label', 'Restore default size');
+  resetSizeBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">unfold_more</span>';
+
   const menuBtn = document.createElement('button');
   menuBtn.type = 'button';
   menuBtn.className = 'group-card__menu-btn';
@@ -427,10 +443,22 @@ function buildGroupHeader(group, getMenuItems, readOnly = false) {
 
   header.appendChild(dragHandle);
   header.appendChild(titleEl);
+  header.appendChild(resetSizeBtn);
   header.appendChild(menuBtn);
   header.appendChild(menu);
 
-  return { header, titleEl, menuBtn, menu, populateMenu };
+  return { header, titleEl, resetSizeBtn, menuBtn, menu, populateMenu };
+}
+
+function getGroupHeightKey(group, groupIndex, slug, location) {
+  const occ = getGroupOccurrenceIndex(state.currentPage?.groups, groupIndex);
+  return buildGroupHeightKey(location, slug, group?.title ?? '', occ);
+}
+
+function initGroupCardResize(card, group, groupIndex, slug, location, resetSizeBtn) {
+  const getKey = () => getGroupHeightKey(group, groupIndex, slug, location);
+  applyGroupHeight(card, getKey(), resetSizeBtn);
+  attachGroupResizeHandle({ card, getKey, resetBtn: resetSizeBtn });
 }
 
 function attachOutsideCloseListener(popoverEl, triggerEl) {
@@ -473,7 +501,9 @@ export async function deleteGroupBox(group, groupIndex, slug, location) {
     isDanger: true,
   });
   if (!confirmed) return;
+  const heightKey = getGroupHeightKey(group, groupIndex, slug, location);
   await apiFetch(withLocation(`/pages/${slug}/groups/${groupIndex}`, location), { method: 'DELETE' });
+  clearGroupMaxHeight(heightKey);
   state.currentPage = await apiFetch(withLocation(`/pages/${slug}`, location));
   renderPage(state.currentPage);
 }
@@ -769,7 +799,7 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
     { action: 'delete-box', label: 'Delete box', danger: true, icon: 'delete' },
   ];
 
-  const { header, titleEl, menuBtn, menu, populateMenu } = buildGroupHeader(group, getMenuItems, readOnly);
+  const { header, titleEl, resetSizeBtn, menuBtn, menu, populateMenu } = buildGroupHeader(group, getMenuItems, readOnly);
   const dueBellBtn = buildStickyDueBellButton(group, groupIndex, slug, location, readOnly);
   if (dueBellBtn) {
     header.insertBefore(dueBellBtn, menuBtn);
@@ -848,6 +878,7 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
       menuBtn,
       titleEl,
       onSave: async (newTitle, newText) => {
+        const oldHeightKey = getGroupHeightKey(group, groupIndex, slug, location);
         await persistStickyGroupUpdate(groupIndex, slug, location, {
           ...group,
           title: newTitle,
@@ -856,6 +887,8 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
           color: group.color || 'yellow',
           items: group.items ?? [],
         });
+        const newOcc = getGroupOccurrenceIndex(state.currentPage?.groups, groupIndex);
+        migrateGroupMaxHeight(oldHeightKey, buildGroupHeightKey(location, slug, newTitle, newOcc));
         renderPage(state.currentPage);
       },
       onCancel: () => renderPage(state.currentPage),
@@ -903,6 +936,7 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
     }
   });
 
+  initGroupCardResize(card, group, groupIndex, slug, location, resetSizeBtn);
   return card;
 }
 
@@ -990,7 +1024,7 @@ export function renderGroup(group, groupIndex, slug, location = null) {
     ];
   };
 
-  const { header, menuBtn, menu, populateMenu } = buildGroupHeader(group, getMenuItems, readOnly);
+  const { header, resetSizeBtn, menuBtn, menu, populateMenu } = buildGroupHeader(group, getMenuItems, readOnly);
   const { picker: colorPicker, syncActiveSwatch } = buildStickyColorPicker(
     () => group.color || 'none',
     async (colorId) => {
@@ -1118,5 +1152,6 @@ export function renderGroup(group, groupIndex, slug, location = null) {
     handlers[btn.dataset.action]?.().catch(err => console.error('[ExoDeck] Action failed:', err));
   });
 
+  initGroupCardResize(card, group, groupIndex, slug, location, resetSizeBtn);
   return card;
 }
