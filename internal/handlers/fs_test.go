@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -210,17 +211,20 @@ func TestResolveInitialPickDirFallbacks(t *testing.T) {
 		t.Errorf("resolveInitialPickDir missing home walks up to = %q, want %q", got, baseDir)
 	}
 
-	// Unresolvable path (unused drive on Windows, or missing relative with no home/config) hits fallback
-	for d := 'Z'; d >= 'D'; d-- {
-		unusedDrive := string(d) + `:\`
-		if _, err := os.Stat(unusedDrive); os.IsNotExist(err) {
-			if got := resolveInitialPickDir(unusedDrive+`missing\sub`, configDir); got != configDir {
-				t.Errorf("unused drive fallback = %q, want %q", got, configDir)
+	// Unresolvable absolute root (unused drive on Windows) hits the candidate fallback.
+	// On POSIX, the single '/' root always exists so parent-walking always terminates at '/'.
+	if runtime.GOOS == "windows" {
+		for d := 'Z'; d >= 'D'; d-- {
+			unusedDrive := string(d) + `:\`
+			if _, err := os.Stat(unusedDrive); os.IsNotExist(err) {
+				if got := resolveInitialPickDir(unusedDrive+`missing\sub`, configDir); got != configDir {
+					t.Errorf("unused drive fallback = %q, want %q", got, configDir)
+				}
+				if got := resolveInitialPickDir(unusedDrive+`missing\sub`, filepath.Join(baseDir, "missing-cfg")); got != "" {
+					t.Errorf("unused drive with missing home+config = %q, want empty", got)
+				}
+				break
 			}
-			if got := resolveInitialPickDir(unusedDrive+`missing\sub`, filepath.Join(baseDir, "missing-cfg")); got != "" {
-				t.Errorf("unused drive with missing home+config = %q, want empty", got)
-			}
-			break
 		}
 	}
 }
