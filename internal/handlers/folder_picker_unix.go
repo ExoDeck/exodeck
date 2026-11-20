@@ -7,10 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 )
+
+const appleScriptPath = "/usr/bin/osascript"
 
 const appleScriptFolderPicker = `on run argv
 	if (count of argv) > 0 and (item 1 of argv) is not "" then
@@ -53,7 +56,7 @@ func pickFolderMacOS(ctx context.Context, initialDir string) (string, bool, erro
 	if initialDir != "" {
 		args = append(args, initialDir)
 	}
-	cmd := exec.CommandContext(ctx, "osascript", args...)
+	cmd := exec.CommandContext(ctx, appleScriptPath, args...)
 	cmd.Stdin = strings.NewReader(appleScriptFolderPicker)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -86,7 +89,7 @@ func pickFolderNative(ctx context.Context, initialDir string) (string, bool, err
 	}
 
 	if runtime.GOOS == "darwin" {
-		if _, err := exec.LookPath("osascript"); err != nil {
+		if info, err := os.Stat(appleScriptPath); err != nil || info.IsDir() {
 			return "", false, errPickerUnavailable
 		}
 		return pickFolderMacOS(ctx, initialDir)

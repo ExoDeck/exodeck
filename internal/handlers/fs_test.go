@@ -48,10 +48,12 @@ func TestPickFolder(t *testing.T) {
 	baseDir := t.TempDir()
 	fakeHome := filepath.Join(baseDir, "home")
 	configDir := filepath.Join(baseDir, "cfg")
-	browseDir := filepath.Join(baseDir, "browse")
+	browseDir := filepath.Join(fakeHome, "browse")
+	workspaceDir := filepath.Join(baseDir, "workspace-root")
+	outsideDir := filepath.Join(baseDir, "outside")
 	relSub := filepath.Join(configDir, "rel-child")
 	chosenDir := filepath.Join(baseDir, "picked")
-	for _, dir := range []string{fakeHome, browseDir, relSub, chosenDir} {
+	for _, dir := range []string{fakeHome, browseDir, workspaceDir, outsideDir, relSub, chosenDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -69,8 +71,13 @@ func TestPickFolder(t *testing.T) {
 	var mockCancelled bool
 	var mockErr error
 
+	store := storage.New(fstest.MapFS{}, baseDir)
+	store.SetWorkspaces(map[string]storage.WorkspaceConfig{
+		"work": {Path: workspaceDir},
+	}, []string{"work"})
+
 	srv := &Server{
-		Store:      storage.New(nil, os.TempDir()),
+		Store:      store,
 		ConfigDir:  configDir,
 		FrontendFS: fstest.MapFS{},
 		FolderPicker: func(_ context.Context, initialDir string) (string, bool, error) {
@@ -120,6 +127,24 @@ func TestPickFolder(t *testing.T) {
 	resp, _ = doPickFolderRequest(t, ts, string(payload), true)
 	if resp.StatusCode != http.StatusOK || gotInitialDir != browseDir {
 		t.Errorf("file initialDir = %q (status %d), want %q", gotInitialDir, resp.StatusCode, browseDir)
+	}
+
+	// 4b. Configured workspace root resolves cleanly, while out-of-bounds/traversal falls back to home
+	payload, _ = json.Marshal(map[string]string{"initial_path": workspaceDir})
+	resp, _ = doPickFolderRequest(t, ts, string(payload), true)
+	if resp.StatusCode != http.StatusOK || gotInitialDir != workspaceDir {
+		t.Errorf("workspace initialDir = %q (status %d), want %q", gotInitialDir, resp.StatusCode, workspaceDir)
+	}
+
+	payload, _ = json.Marshal(map[string]string{"initial_path": outsideDir})
+	resp, _ = doPickFolderRequest(t, ts, string(payload), true)
+	if resp.StatusCode != http.StatusOK || gotInitialDir != fakeHome {
+		t.Errorf("outside initialDir = %q (status %d), want %q", gotInitialDir, resp.StatusCode, fakeHome)
+	}
+
+	resp, _ = doPickFolderRequest(t, ts, `{"initial_path":"../outside"}`, true)
+	if resp.StatusCode != http.StatusOK || gotInitialDir != fakeHome {
+		t.Errorf("traversal initialDir = %q (status %d), want %q", gotInitialDir, resp.StatusCode, fakeHome)
 	}
 
 	// 5. Empty initial_path and empty request body both resolve to homeDir

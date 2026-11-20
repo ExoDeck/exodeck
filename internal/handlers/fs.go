@@ -21,37 +21,105 @@ type pickFolderResponse struct {
 	Cancelled bool   `json:"cancelled"`
 }
 
-func resolveInitialPickDir(rawPath, configDir string) string {
+func resolveExistingDirOrAncestor(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	cur := filepath.Clean(dir)
+	for {
+		if info, err := os.Stat(cur); err == nil && info.IsDir() {
+			return cur
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return ""
+}
+
+func resolveDirWithinRoot(rootDir, rel string) (string, bool) {
+	cleanRoot := filepath.Clean(rootDir)
+	root, err := os.OpenRoot(cleanRoot)
+	if err != nil {
+		return "", false
+	}
+	defer func() {
+		_ = root.Close()
+	}()
+
+	cur := filepath.Clean(rel)
+	if cur == ".." || strings.HasPrefix(cur, ".."+string(filepath.Separator)) || filepath.IsAbs(cur) {
+		return "", false
+	}
+	for {
+		if info, statErr := root.Stat(cur); statErr == nil && info.IsDir() {
+			if cur == "." {
+				return cleanRoot, true
+			}
+			return filepath.Join(cleanRoot, cur), true
+		}
+		if cur == "." {
+			break
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return "", false
+}
+
+func appendUniqueRoot(roots []string, seen map[string]struct{}, candidate string) []string {
+	if candidate == "" {
+		return roots
+	}
+	clean := filepath.Clean(candidate)
+	if _, exists := seen[clean]; exists {
+		return roots
+	}
+	seen[clean] = struct{}{}
+	return append(roots, clean)
+}
+
+func resolveInitialPickDir(rawPath, configDir string, workspaceRoots ...string) string {
 	raw := strings.TrimSpace(rawPath)
 	homeDir, _ := os.UserHomeDir()
 
-	var target string
-	switch {
-	case raw == "":
-		if homeDir != "" {
-			target = filepath.Clean(homeDir)
-		} else if configDir != "" {
-			target = filepath.Clean(configDir)
+	if raw == "" {
+		for _, candidate := range []string{homeDir, configDir} {
+			if resolved := resolveExistingDirOrAncestor(candidate); resolved != "" {
+				return resolved
+			}
 		}
-	case !filepath.IsAbs(raw) && configDir != "":
-		target = filepath.Clean(filepath.Join(configDir, raw))
-	default:
-		target = filepath.Clean(raw)
+		return ""
 	}
 
-	if target != "" {
-		if info, err := os.Stat(target); err == nil && info.IsDir() {
-			return target
+	if !filepath.IsAbs(raw) && configDir != "" {
+		if resolved, ok := resolveDirWithinRoot(configDir, raw); ok {
+			return resolved
 		}
-		cur := target
-		for {
-			parent := filepath.Dir(cur)
-			if parent == cur {
-				break
+	}
+
+	if filepath.IsAbs(raw) {
+		cleanTarget := filepath.Clean(raw)
+		seen := make(map[string]struct{})
+		var allowedRoots []string
+		allowedRoots = appendUniqueRoot(allowedRoots, seen, homeDir)
+		allowedRoots = appendUniqueRoot(allowedRoots, seen, configDir)
+		for _, wsRoot := range workspaceRoots {
+			allowedRoots = appendUniqueRoot(allowedRoots, seen, wsRoot)
+		}
+
+		for _, base := range allowedRoots {
+			rel, err := filepath.Rel(base, cleanTarget)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+				continue
 			}
-			cur = parent
-			if st, statErr := os.Stat(cur); statErr == nil && st.IsDir() {
-				return cur
+			if resolved, ok := resolveDirWithinRoot(base, rel); ok {
+				return resolved
 			}
 		}
 	}
@@ -68,6 +136,20 @@ func resolveInitialPickDir(rawPath, configDir string) string {
 	return ""
 }
 
+func (s *Server) collectAllowedPickerRoots() []string {
+	if s.Store == nil {
+		return nil
+	}
+	ws := s.Store.Workspaces()
+	roots := make([]string, 0, len(ws))
+	for _, cfg := range ws {
+		if cfg.Path != "" {
+			roots = append(roots, cfg.Path)
+		}
+	}
+	return roots
+}
+
 func (s *Server) pickFolder(w http.ResponseWriter, r *http.Request) {
 	var req pickFolderRequest
 	if r.Body != nil {
@@ -77,7 +159,7 @@ func (s *Server) pickFolder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	initialDir := resolveInitialPickDir(req.InitialPath, s.ConfigDir)
+	initialDir := resolveInitialPickDir(req.InitialPath, s.ConfigDir, s.collectAllowedPickerRoots()...)
 	picker := s.FolderPicker
 	if picker == nil {
 		picker = pickFolderNative
