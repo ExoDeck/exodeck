@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -320,6 +321,16 @@ func TestGroupErrorBranches(t *testing.T) {
 	code, _ = put(t, ts, "/api/v1/pages/p/groups/0?location=default", sensGroup)
 	if code != http.StatusLocked {
 		t.Errorf("expected 423 for updateGroup with sensitive item when locked, got %d", code)
+	}
+
+	// 5. Invalid JSON -> 422
+	resp, err := http.Post(ts.URL+"/api/v1/pages/p/groups?location=default", "application/json", strings.NewReader("{bad"))
+	if err != nil {
+		t.Fatalf("POST invalid JSON: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422 for addGroup invalid JSON, got %d", resp.StatusCode)
 	}
 }
 

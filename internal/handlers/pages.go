@@ -276,43 +276,62 @@ func (s *Server) deletePage(w http.ResponseWriter, r *http.Request) {
 // Groups CRUD
 // --------------------------------------------------------------------------
 
-func (s *Server) addGroup(w http.ResponseWriter, r *http.Request) {
-	slug := chi.URLParam(r, "slug")
-	location := r.URL.Query().Get("location")
+type preparedGroup struct {
+	group     models.Group
+	page      models.Page
+	key       []byte
+	fernetKey string
+}
 
-	var group models.Group
-	if !decodeJSON(w, r, &group) {
-		return
+func (s *Server) decodeAndPrepareGroup(w http.ResponseWriter, r *http.Request, slug, location string) (preparedGroup, bool) {
+	var prep preparedGroup
+	if !decodeJSON(w, r, &prep.group) {
+		return prep, false
 	}
-	if group.Items == nil {
-		group.Items = []models.Item{}
+	if prep.group.Items == nil {
+		prep.group.Items = []models.Item{}
 	}
 
 	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)
 	if status != 0 {
 		jsonError(w, status, errMsg)
-		return
+		return prep, false
 	}
-	if isLocked && groupHasSensitiveItems(group) {
+	if isLocked && groupHasSensitiveItems(prep.group) {
 		jsonError(w, http.StatusLocked, msgVaultLocked)
-		return
+		return prep, false
 	}
 
-	encryptItems(group.Items, key, fernetKey)
+	encryptItems(prep.group.Items, key, fernetKey)
 
 	page, httpStatus, errMsg := s.Store.ReadPage(slug, location)
 	if httpStatus != 0 {
 		jsonError(w, httpStatus, errMsg)
+		return prep, false
+	}
+	prep.page = page
+	prep.key = key
+	prep.fernetKey = fernetKey
+	return prep, true
+}
+
+func (s *Server) addGroup(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	location := r.URL.Query().Get("location")
+
+	prep, ok := s.decodeAndPrepareGroup(w, r, slug, location)
+	if !ok {
 		return
 	}
-	page.Groups = append(page.Groups, group)
-	if httpStatus, errMsg := s.Store.WritePage(slug, page, location); httpStatus != 0 {
+
+	prep.page.Groups = append(prep.page.Groups, prep.group)
+	if httpStatus, errMsg := s.Store.WritePage(slug, prep.page, location); httpStatus != 0 {
 		jsonError(w, httpStatus, errMsg)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	jsonOK(w, map[string]int{"group_index": len(page.Groups) - 1})
+	jsonOK(w, map[string]int{"group_index": len(prep.page.Groups) - 1})
 }
 
 func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
@@ -323,42 +342,22 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var group models.Group
-	if !decodeJSON(w, r, &group) {
+	prep, ok := s.decodeAndPrepareGroup(w, r, slug, location)
+	if !ok {
 		return
 	}
-	if group.Items == nil {
-		group.Items = []models.Item{}
-	}
-
-	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)
-	if status != 0 {
-		jsonError(w, status, errMsg)
-		return
-	}
-	if isLocked && groupHasSensitiveItems(group) {
-		jsonError(w, http.StatusLocked, msgVaultLocked)
+	if !validateIndex(w, groupIndex, len(prep.page.Groups), "group") {
 		return
 	}
 
-	encryptItems(group.Items, key, fernetKey)
-
-	page, httpStatus, errMsg := s.Store.ReadPage(slug, location)
-	if httpStatus != 0 {
-		jsonError(w, httpStatus, errMsg)
-		return
-	}
-	if !validateIndex(w, groupIndex, len(page.Groups), "group") {
-		return
-	}
-	page.Groups[groupIndex] = group
-	if httpStatus, errMsg := s.Store.WritePage(slug, page, location); httpStatus != 0 {
+	prep.page.Groups[groupIndex] = prep.group
+	if httpStatus, errMsg := s.Store.WritePage(slug, prep.page, location); httpStatus != 0 {
 		jsonError(w, httpStatus, errMsg)
 		return
 	}
 
-	decryptItems(group.Items, key, fernetKey)
-	jsonOK(w, group)
+	decryptItems(prep.group.Items, prep.key, prep.fernetKey)
+	jsonOK(w, prep.group)
 }
 
 func (s *Server) deleteGroup(w http.ResponseWriter, r *http.Request) {
