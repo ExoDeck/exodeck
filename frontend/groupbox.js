@@ -457,11 +457,18 @@ function attachHeaderMenuToggle(menuBtn, menu, populateMenu, onMenuOpen = null) 
   });
 }
 
-async function deleteGroupBox(group, groupIndex, slug, location) {
-  const confirmed = await openModal({
-    title: `Delete group "${group.title}"?`,
-    fields: [],
+export async function deleteGroupBox(group, groupIndex, slug, location) {
+  if (!group || isHelpWorkspace(location)) return;
+  const isSticky = group.type === 'sticky';
+  const label = isSticky ? 'sticky note' : 'group';
+  const titleText = group.title ? `"${group.title}"` : `this ${label}`;
+  const confirmed = await openConfirmModal({
+    title: `Delete ${label} ${titleText}?`,
+    message: isSticky
+      ? 'Are you sure you want to permanently delete this sticky note?'
+      : 'Are you sure you want to permanently delete this group and all its items?',
     confirmLabel: 'Delete',
+    cancelLabel: 'Cancel',
     isDanger: true,
   });
   if (!confirmed) return;
@@ -528,7 +535,7 @@ function buildStickyColorPicker(getCurrentColor, onSelectColor, defaultColor = '
   return { picker, syncActiveSwatch };
 }
 
-function buildStickyEditor({ initialTitle, initialText, fallbackTitle = 'Sticky Note', header, menuBtn, titleEl, onSave, onCancel }) {
+function buildStickyEditor({ card, initialTitle, initialText, fallbackTitle = 'Sticky Note', header, menuBtn, titleEl, onSave, onCancel }) {
   titleEl.setAttribute('contenteditable', 'plaintext-only');
   titleEl.classList.add('group-card__title--editing');
 
@@ -565,6 +572,30 @@ function buildStickyEditor({ initialTitle, initialText, fallbackTitle = 'Sticky 
 
   let isSaving = false;
 
+  const isBlockingOverlayOpen = () => Boolean(
+    document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden])')
+  );
+
+  const cycleStickyFocus = (e) => {
+    const focusOrder = [titleEl, textarea, saveBtn, cancelBtn].filter(
+      el => el && !el.disabled && !el.hidden && el.isConnected
+    );
+    if (focusOrder.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = focusOrder.indexOf(document.activeElement);
+    if (idx === -1) {
+      (e.shiftKey ? focusOrder.at(-1) : focusOrder[0])?.focus();
+      return;
+    }
+    const nextIdx = (idx + (e.shiftKey ? -1 : 1) + focusOrder.length) % focusOrder.length;
+    focusOrder[nextIdx]?.focus();
+  };
+
+  function cleanup() {
+    document.removeEventListener('keydown', onDocKeydown);
+  }
+
   const triggerSave = async () => {
     if (isSaving) return;
     isSaving = true;
@@ -572,6 +603,7 @@ function buildStickyEditor({ initialTitle, initialText, fallbackTitle = 'Sticky 
     const newTitle = titleEl.textContent.trim() || fallbackTitle;
     try {
       await onSave(newTitle, textarea.value);
+      cleanup();
     } catch (err) {
       isSaving = false;
       saveBtn.disabled = false;
@@ -594,10 +626,15 @@ function buildStickyEditor({ initialTitle, initialText, fallbackTitle = 'Sticky 
         return;
       }
     }
+    cleanup();
     onCancel();
   };
 
-  const onEditorKeydown = (e) => {
+  const handleStickyKeydown = (e) => {
+    if (e.key === 'Tab') {
+      cycleStickyFocus(e);
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       e.stopPropagation();
@@ -609,15 +646,28 @@ function buildStickyEditor({ initialTitle, initialText, fallbackTitle = 'Sticky 
     }
   };
 
+  function onDocKeydown(e) {
+    if (!card?.isConnected) {
+      cleanup();
+      return;
+    }
+    if (isBlockingOverlayOpen()) return;
+    handleStickyKeydown(e);
+  }
+
   titleEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      e.stopPropagation();
       textarea.focus();
-      return;
     }
-    onEditorKeydown(e);
   });
-  textarea.addEventListener('keydown', onEditorKeydown);
+  card?.addEventListener('keydown', (e) => {
+    if (!isBlockingOverlayOpen()) {
+      handleStickyKeydown(e);
+    }
+  });
+  document.addEventListener('keydown', onDocKeydown);
   saveBtn.addEventListener('click', () => { void triggerSave(); });
   cancelBtn.addEventListener('click', () => { void triggerCancel(); });
 
@@ -704,6 +754,7 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
     bodyEl.hidden = true;
 
     const { editorWrap, textarea } = buildStickyEditor({
+      card,
       initialTitle: group.title ?? '',
       initialText: group.text ?? '',
       fallbackTitle: 'Sticky Note',
@@ -732,6 +783,10 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
 
   if (!readOnly) {
     attachHeaderMenuToggle(menuBtn, menu, populateMenu);
+    card.addEventListener('exodeck:edit-sticky', () => {
+      closeOpenMenu();
+      enterStickyEditMode();
+    });
   }
 
   menu.addEventListener('click', e => {
@@ -778,6 +833,7 @@ export function createNewStickyNoteCard(slug, location = null) {
   card.appendChild(header);
 
   const { editorWrap } = buildStickyEditor({
+    card,
     initialTitle: '',
     initialText: '',
     fallbackTitle: 'Sticky Note',

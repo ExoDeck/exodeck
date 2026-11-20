@@ -2785,10 +2785,13 @@ a:hover {
   flex-direction: column;
   gap: var(--space-sm);
   flex: 1;
+  min-height: 0;
 }
 
 .group-card__sticky-textarea {
+  flex: 1 0 auto;
   width: 100%;
+  box-sizing: border-box;
   min-height: 120px;
   resize: vertical;
   margin: var(--space-xs) 0 0;

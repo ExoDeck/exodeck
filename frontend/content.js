@@ -10,11 +10,19 @@ import { openConfirmModal } from './modal.js';
 
 let editEscListener = null;
 
+function detachEditEscListener() {
+  if (editEscListener) {
+    document.removeEventListener('keydown', editEscListener);
+    editEscListener = null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Add Group modal
 // ---------------------------------------------------------------------------
 
 export function startInlineGroupCreation(groupType = 'group') {
+  if (isHelpWorkspace(state.currentLocation)) return;
   const grid = document.getElementById('pageGrid');
   if (!grid) return;
   const addControl = document.getElementById('gridAddGroup');
@@ -26,6 +34,7 @@ export function startInlineGroupCreation(groupType = 'group') {
     } else {
       grid.appendChild(card);
     }
+    card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     focusTarget.focus();
     return;
   }
@@ -305,42 +314,52 @@ function setupPageActions(page) {
     return false;
   };
 
+  let isCancelling = false;
+
   const cancelEdit = async () => {
-    if (isEditModeActive()) {
+    if (!isEditModeActive() || isCancelling) return;
+    isCancelling = true;
+    try {
       if (isGridEditDirty()) {
         const discard = await openConfirmModal();
         if (!discard) return;
       }
       exitEditMode();
-      if (editEscListener) {
-        document.removeEventListener('keydown', editEscListener);
-        editEscListener = null;
-      }
+      detachEditEscListener();
       const titleEl2 = document.getElementById('pageTitle');
       if (titleEl2) {
         titleEl2.removeAttribute('contenteditable');
         titleEl2.classList.remove('content__title--editing');
       }
       renderPage(state.currentPage);
+    } finally {
+      isCancelling = false;
     }
   };
 
   cancelBtn.addEventListener('click', () => { void cancelEdit(); });
 
-  if (editEscListener) {
-    document.removeEventListener('keydown', editEscListener);
-    editEscListener = null;
-  }
-
-  editEscListener = (e) => {
-    if (isEditModeActive() && e.key === 'Escape') {
-      e.preventDefault();
-      void cancelEdit();
-    }
+  const onEditEscape = (e) => {
+    if (!isEditModeActive() || e.key !== 'Escape') return;
+    if (document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden]), .group-card__menu:not([hidden])')) return;
+    const floatingNav = document.getElementById('floatingNav');
+    if (floatingNav && !floatingNav.hasAttribute('hidden')) return;
+    const notifOverlay = document.getElementById('notificationOverlay');
+    if (notifOverlay && !notifOverlay.hasAttribute('hidden')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void cancelEdit();
   };
 
-  if (isEditModeActive()) {
+  const attachEditEscListener = () => {
+    detachEditEscListener();
+    editEscListener = onEditEscape;
     document.addEventListener('keydown', editEscListener);
+  };
+
+  detachEditEscListener();
+  if (isEditModeActive()) {
+    attachEditEscListener();
   }
 
   editBtn.addEventListener('click', async () => {
@@ -348,14 +367,12 @@ function setupPageActions(page) {
       await saveTitleAndGroups(page);
       page = state.currentPage; // Update local reference after save
       exitEditMode();
-      if (editEscListener) {
-        document.removeEventListener('keydown', editEscListener);
-        editEscListener = null;
-      }
+      detachEditEscListener();
       cancelBtn.style.display = 'none';
     } else {
       enterEditMode();
       enterEditUI(editBtn);
+      attachEditEscListener();
       cancelBtn.style.display = 'inline-flex';
     }
     editBtn.title = isEditModeActive() ? 'Save (Ctrl+S)' : 'Edit (e)';
@@ -524,6 +541,8 @@ export function renderPage(page) {
 
   // Whiteboard pages have their own renderer
   if (page.page_type === 'whiteboard') {
+    detachEditEscListener();
+    if (isEditModeActive()) exitEditMode();
     unmountBpmn();
     document.getElementById('content')?.classList.remove('content--bpmn');
     void renderWhiteboardPage(page, state.currentSlug, state.currentLocation);
@@ -536,6 +555,8 @@ export function renderPage(page) {
 
   // Business Process pages have their own renderer
   if (page.page_type === 'bpmn') {
+    detachEditEscListener();
+    if (isEditModeActive()) exitEditMode();
     void renderBpmnPage(page, state.currentSlug, state.currentLocation);
     return;
   }
@@ -546,6 +567,8 @@ export function renderPage(page) {
 
   // Note pages have their own renderer
   if (page.page_type === 'note') {
+    detachEditEscListener();
+    if (isEditModeActive()) exitEditMode();
     renderNoteContent(page);
     return;
   }

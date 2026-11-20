@@ -1,10 +1,10 @@
 // keyboard-nav.js — Keyboard navigation overlay
-import { state, apiFetch } from './app.js';
+import { state, apiFetch, isHelpWorkspace } from './app.js';
 import { loadPage, toggleSidebar, createGridPage, createNote } from './sidebar.js';
 import { openNoteWindow, openEncryptedNoteWindow } from './notes.js';
 import { openPasswordWindow } from './password.js';
 import { openTaskWindow } from './task.js';
-import { addItemToGroup } from './groupbox.js';
+import { addItemToGroup, deleteGroupBox } from './groupbox.js';
 import { startInlineGroupCreation } from './content.js';
 import { openPicker } from './add-picker.js';
 import { createWhiteboardPage, printWhiteboardPage } from './whiteboard.js';
@@ -269,14 +269,20 @@ async function handleResultClick(li) {
 
 
 
-function getSelectedGroupContext() {
-  const isGridPage = state.currentPage
-    && state.currentPage.page_type !== 'note'
-    && state.currentPage.page_type !== 'whiteboard'
-    && state.currentPage.page_type !== 'bpmn'
-    && Array.isArray(state.currentPage.groups);
+function isActiveGridPage() {
+  const pageType = state.currentPage?.page_type;
+  return Boolean(
+    state.currentPage &&
+    !state.activeGridNote &&
+    pageType !== 'note' &&
+    pageType !== 'whiteboard' &&
+    pageType !== 'bpmn' &&
+    Array.isArray(state.currentPage.groups)
+  );
+}
 
-  if (!isGridPage) return null;
+function getSelectedGroupContext() {
+  if (!isActiveGridPage()) return null;
 
   const grid = document.getElementById('pageGrid');
   const groupCards = grid ? Array.from(grid.querySelectorAll('.group-card')) : [];
@@ -296,11 +302,7 @@ function getSelectedGroupContext() {
 function buildAddActions() {
   const actions = [];
   const selectedGroup = getSelectedGroupContext();
-  const isGridPage = state.currentPage
-    && state.currentPage.page_type !== 'note'
-    && state.currentPage.page_type !== 'whiteboard'
-    && state.currentPage.page_type !== 'bpmn'
-    && Array.isArray(state.currentPage.groups);
+  const isGridPage = isActiveGridPage();
   const hasItemGroups = (state.currentPage?.groups ?? []).some(g => g.type !== 'sticky');
 
   if (selectedGroup) {
@@ -410,7 +412,7 @@ async function handleAddShortcut() {
 // ---------------------------------------------------------------------------
 
 function isOverlayActive() {
-  if (document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden])')) return true;
+  if (document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden]), .group-card--sticky-editing')) return true;
   const floatingNav = document.getElementById('floatingNav');
   if (floatingNav && !floatingNav.hasAttribute('hidden')) return true;
   const notifOverlay = document.getElementById('notificationOverlay');
@@ -428,10 +430,16 @@ function handleSlashKeydown(e) {
 }
 
 function handleSKeydown(e) {
-  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target) && !isOverlayActive()) {
-    e.preventDefault();
-    toggleSidebar();
+  if (e.ctrlKey || e.altKey || e.metaKey || isTypingContext(e.target) || isOverlayActive()) return;
+  if (isActiveGridPage()) {
+    if (!isHelpWorkspace(state.currentLocation) && !document.getElementById('pageGrid')?.classList.contains('content__grid--edit-mode')) {
+      e.preventDefault();
+      startInlineGroupCreation('sticky');
+    }
+    return;
   }
+  e.preventDefault();
+  toggleSidebar();
 }
 
 function handleEKeydown(e) {
@@ -487,9 +495,16 @@ function handleGKeydown(e) {
   }
 }
 
+function hasModalOrInlineBlock() {
+  return Boolean(
+    document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden]), .group-card--sticky-editing') ||
+    (document.getElementById('floatingNav') && !document.getElementById('floatingNav').hasAttribute('hidden'))
+  );
+}
+
 function handlePeriodKeydown(e) {
   if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target)) {
-    if (!document.querySelector('.modal-overlay, .add-picker') && keyNavEl?.hasAttribute('hidden')) {
+    if (!document.querySelector('.modal-overlay, .add-picker, .group-card--sticky-editing') && keyNavEl?.hasAttribute('hidden')) {
       e.preventDefault();
       void import('./sidebar.js').then(m => m.toggleFloatingNavigator()).catch(console.error);
     }
@@ -524,34 +539,21 @@ function handlePKeydown(e) {
 }
 
 function handleNKeydown(e) {
-  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target)) {
-    const otherOverlayActive = Boolean(
-      document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden])') ||
-      (document.getElementById('floatingNav') && !document.getElementById('floatingNav').hasAttribute('hidden'))
-    );
-    if (!otherOverlayActive) {
-      e.preventDefault();
-      toggleNotificationPanel();
-    }
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target) && !hasModalOrInlineBlock()) {
+    e.preventDefault();
+    toggleNotificationPanel();
   }
 }
 
 function handleTKeydown(e) {
-  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target)) {
-    const otherOverlayActive = Boolean(
-      document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden])') ||
-      (document.getElementById('floatingNav') && !document.getElementById('floatingNav').hasAttribute('hidden'))
-    );
-    if (!otherOverlayActive) {
-      e.preventDefault();
-      toggleTasksPanel();
-    }
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target) && !hasModalOrInlineBlock()) {
+    e.preventDefault();
+    toggleTasksPanel();
   }
 }
 
 function isGridNavigable(e) {
-  const pageType = state.currentPage?.page_type;
-  if (!state.currentPage || Boolean(state.activeGridNote) || pageType === 'note' || pageType === 'whiteboard' || pageType === 'bpmn') {
+  if (!isActiveGridPage()) {
     return false;
   }
   return !isTypingContext(e.target) && !isOverlayActive() && !document.querySelector('.group-card__menu:not([hidden])');
@@ -630,10 +632,26 @@ function handleGridActivation(e, currentGroup) {
     return;
   }
 
+  if (e.key === 'Enter' && currentGroup.classList.contains('group-card--sticky')) {
+    e.preventDefault();
+    currentGroup.dispatchEvent(new CustomEvent('exodeck:edit-sticky'));
+    return;
+  }
+
   const focusedItem = currentGroup.querySelector('.item--focused');
   if (focusedItem) {
     activateItem(e, focusedItem);
   }
+}
+
+function handleGridDelete(e, currentGroup) {
+  if (currentGroup.classList.contains('group-card--add') || isHelpWorkspace(state.currentLocation)) return;
+  const groupIndex = Number(currentGroup.dataset.groupIndex);
+  const group = state.currentPage?.groups?.[groupIndex];
+  if (!group) return;
+  e.preventDefault();
+  void deleteGroupBox(group, groupIndex, state.currentSlug, state.currentLocation)
+    .catch(err => console.error('[ExoDeck] Delete group failed:', err));
 }
 
 function handleGridNavigation(e) {
@@ -647,7 +665,7 @@ function handleGridNavigation(e) {
 
   const currentGroupIdx = groupCards.findIndex(c => c.classList.contains('group-card--focused'));
   if (currentGroupIdx === -1) {
-    if (e.key === 'Enter' || e.key === ' ') return;
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Delete') return;
     e.preventDefault();
     groupCards[0].classList.add('group-card--focused');
     groupCards[0].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -660,6 +678,8 @@ function handleGridNavigation(e) {
     handleGridVerticalNav(e, groupCards[currentGroupIdx]);
   } else if (e.key === 'Enter' || e.key === ' ') {
     handleGridActivation(e, groupCards[currentGroupIdx]);
+  } else if (e.key === 'Delete') {
+    handleGridDelete(e, groupCards[currentGroupIdx]);
   }
 }
 
@@ -698,7 +718,7 @@ const keyHandlers = {
   'T': handleTKeydown,
 };
 
-const GRID_NAV_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' ']);
+const GRID_NAV_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' ', 'Delete']);
 
 function handleGlobalKeydown(e) {
   if (e.key === 'Escape') {
