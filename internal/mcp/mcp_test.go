@@ -216,8 +216,8 @@ func TestProtocolLifecycleAndMethods(t *testing.T) {
 
 	toolsResp := srv.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: json.RawMessage(`3`), Method: "tools/list"})
 	toolsSlice := toolsResp.Result.(map[string]interface{})["tools"].([]Tool)
-	if len(toolsSlice) != 38 {
-		t.Errorf("expected 38 tools registered, got %d", len(toolsSlice))
+	if len(toolsSlice) != 41 {
+		t.Errorf("expected 41 tools registered, got %d", len(toolsSlice))
 	}
 
 	resList := srv.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: json.RawMessage(`4`), Method: "resources/list"})
@@ -1259,8 +1259,279 @@ func TestNotesWhiteboardsBpmnSearchTasksMoveAndSync(t *testing.T) {
 		"list_media", "delete_media",
 		"get_whiteboard", "create_whiteboard", "update_whiteboard", "delete_whiteboard",
 		"get_bpmn", "create_bpmn", "update_bpmn", "delete_bpmn",
+		"add_sticky_note", "update_sticky_note", "delete_sticky_note",
 	} {
 		callToolInvalidJSON(t, srv, toolName)
+	}
+}
+
+func TestStickyNotesAndGroupColors(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+
+	// 1. Create a grid page containing a sticky note (default color yellow) and a colored regular group
+	createOut, isErr := callToolHelper(t, srv, "create_grid_page", map[string]interface{}{
+		"page_name": "Sticky Board",
+		"workspace": "Main",
+		"groups": []map[string]interface{}{
+			{
+				"title":    "Quick Note",
+				"type":     "sticky",
+				"markdown": "Plain **UTF-8** markdown\n- [ ] Task one",
+			},
+			{
+				"title": "Shared Title",
+				"type": "sticky",
+				"text":  "Via text alias",
+				"color": "Rose",
+			},
+			{
+				"title": "Links Box",
+				"color": "blue",
+				"items": []map[string]interface{}{
+					{"title": "Docs", "url": "https://example.com"},
+				},
+			},
+		},
+	})
+	if isErr {
+		t.Fatalf("create_grid_page with sticky notes failed: %s", createOut)
+	}
+
+	// Verify raw storage stores plain UTF-8 Markdown in Group.Text (NOT Base64)
+	rawPage, st, msg := srv.Store.ReadPage("sticky-board", "Main")
+	if st != 0 {
+		t.Fatalf("ReadPage failed: %d %s", st, msg)
+	}
+	if len(rawPage.Groups) != 3 {
+		t.Fatalf("expected 3 groups on disk, got %d", len(rawPage.Groups))
+	}
+	if rawPage.Groups[0].Type == nil || *rawPage.Groups[0].Type != "sticky" {
+		t.Fatalf("expected group 0 type sticky, got %+v", rawPage.Groups[0].Type)
+	}
+	if rawPage.Groups[0].Text == nil || *rawPage.Groups[0].Text != "Plain **UTF-8** markdown\n- [ ] Task one" {
+		t.Errorf("expected plain UTF-8 markdown in Group.Text, got %+v", rawPage.Groups[0].Text)
+	}
+	if rawPage.Groups[0].Color == nil || *rawPage.Groups[0].Color != "yellow" {
+		t.Errorf("expected default sticky color 'yellow', got %+v", rawPage.Groups[0].Color)
+	}
+	if rawPage.Groups[1].Color == nil || *rawPage.Groups[1].Color != "rose" {
+		t.Errorf("expected normalized sticky color 'rose', got %+v", rawPage.Groups[1].Color)
+	}
+	if rawPage.Groups[2].Color == nil || *rawPage.Groups[2].Color != "blue" {
+		t.Errorf("expected group color 'blue', got %+v", rawPage.Groups[2].Color)
+	}
+
+	// 2. Read back via get_grid_page
+	getOut, isErr := callToolHelper(t, srv, "get_grid_page", map[string]interface{}{
+		"slug":      "sticky-board",
+		"workspace": "Main",
+	})
+	if isErr {
+		t.Fatalf("get_grid_page failed: %s", getOut)
+	}
+	var gotPage MCPPage
+	if err := json.Unmarshal([]byte(getOut), &gotPage); err != nil {
+		t.Fatalf("unmarshal get_grid_page: %v", err)
+	}
+	if gotPage.Groups[0].Type == nil || *gotPage.Groups[0].Type != "sticky" ||
+		gotPage.Groups[0].Markdown == nil || *gotPage.Groups[0].Markdown != "Plain **UTF-8** markdown\n- [ ] Task one" ||
+		gotPage.Groups[0].Color == nil || *gotPage.Groups[0].Color != "yellow" {
+		t.Errorf("unexpected sticky note in get_grid_page: %+v", gotPage.Groups[0])
+	}
+	if gotPage.Groups[2].Color == nil || *gotPage.Groups[2].Color != "blue" {
+		t.Errorf("expected group 2 color 'blue', got %+v", gotPage.Groups[2])
+	}
+
+	// 3. Validation errors on create/add_group/add_sticky_note
+	badGroupCases := []map[string]interface{}{
+		{"slug": "sticky-board", "workspace": "Main", "title": "Bad", "type": "unknown"},
+		{"slug": "sticky-board", "workspace": "Main", "title": "Bad", "type": "sticky", "items": []map[string]interface{}{{"title": "X"}}},
+		{"slug": "sticky-board", "workspace": "Main", "title": "Bad", "markdown": "should fail on regular group"},
+		{"slug": "sticky-board", "workspace": "Main", "title": "Bad", "type": "sticky", "color": "neon-magenta"},
+	}
+	for _, tc := range badGroupCases {
+		if _, errFlag := callToolHelper(t, srv, "add_group", tc); !errFlag {
+			t.Errorf("expected add_group error for %+v", tc)
+		}
+	}
+	for _, tc := range []map[string]interface{}{
+		{"slug": "sticky-board", "workspace": "Main", "title": "   ", "markdown": "x"},
+		{"slug": "sticky-board", "workspace": "Main", "title": "Bad Color", "color": "chartreuse"},
+		{"slug": "help", "workspace": "ExoDeck", "title": "ReadOnly", "markdown": "x"},
+	} {
+		if _, errFlag := callToolHelper(t, srv, "add_sticky_note", tc); !errFlag {
+			t.Errorf("expected add_sticky_note error for %+v", tc)
+		}
+	}
+
+	// 4. add_sticky_note (default yellow and custom emerald) & add_group (sticky + colored group)
+	addStickyOut, isErr := callToolHelper(t, srv, "add_sticky_note", map[string]interface{}{
+		"slug":      "sticky-board",
+		"workspace": "Main",
+		"title":     "Scratchpad",
+		"markdown":  "Line 1",
+		"color":     "emerald",
+	})
+	if isErr || !strings.Contains(addStickyOut, `"group_index": 3`) || !strings.Contains(addStickyOut, `"emerald"`) {
+		t.Fatalf("add_sticky_note failed: %s", addStickyOut)
+	}
+
+	addGroupStickyOut, isErr := callToolHelper(t, srv, "add_group", map[string]interface{}{
+		"slug":      "sticky-board",
+		"workspace": "Main",
+		"title":     "Via Add Group",
+		"type":      "sticky",
+		"markdown":  "Sticky from add_group",
+	})
+	if isErr || !strings.Contains(addGroupStickyOut, `"type": "sticky"`) || !strings.Contains(addGroupStickyOut, `"yellow"`) {
+		t.Fatalf("add_group sticky failed: %s", addGroupStickyOut)
+	}
+
+	addColoredGroupOut, isErr := callToolHelper(t, srv, "add_group", map[string]interface{}{
+		"slug":      "sticky-board",
+		"workspace": "Main",
+		"title":     "Teal Box",
+		"color":     "teal",
+	})
+	if isErr || !strings.Contains(addColoredGroupOut, `"teal"`) {
+		t.Fatalf("add_group colored failed: %s", addColoredGroupOut)
+	}
+
+	// 5. update_sticky_note (replace, append, rename, color -> none via empty string, error checks)
+	updStickyOut, isErr := callToolHelper(t, srv, "update_sticky_note", map[string]interface{}{
+		"slug":        "sticky-board",
+		"workspace":   "Main",
+		"group_index": 3,
+		"title":       "Scratchpad Updated",
+		"markdown":    "Line 2",
+		"append":      true,
+		"color":       "",
+	})
+	if isErr {
+		t.Fatalf("update_sticky_note append failed: %s", updStickyOut)
+	}
+	if !strings.Contains(updStickyOut, `"color": "none"`) || !strings.Contains(updStickyOut, "Line 1\\n\\nLine 2") {
+		t.Errorf("unexpected update_sticky_note result: %s", updStickyOut)
+	}
+
+	for _, badUpd := range []map[string]interface{}{
+		{"slug": "sticky-board", "workspace": "Main", "group_index": 2, "title": "NotSticky"},
+		{"slug": "sticky-board", "workspace": "Main", "group_index": 99, "title": "OOB"},
+		{"slug": "sticky-board", "workspace": "Main", "group_index": 3, "color": "invalid"},
+		{"slug": "sticky-board", "workspace": "Main", "group_index": 3, "title": " "},
+	} {
+		if _, errFlag := callToolHelper(t, srv, "update_sticky_note", badUpd); !errFlag {
+			t.Errorf("expected update_sticky_note error for %+v", badUpd)
+		}
+	}
+
+	// 6. update_group on sticky note and regular colored group (+ guard checks)
+	updGroupColorOut, isErr := callToolHelper(t, srv, "update_group", map[string]interface{}{
+		"slug":        "sticky-board",
+		"workspace":   "Main",
+		"group_index": 2,
+		"color":       "indigo",
+	})
+	if isErr || !strings.Contains(updGroupColorOut, `"indigo"`) {
+		t.Fatalf("update_group color failed: %s", updGroupColorOut)
+	}
+	updGroupStickyOut, isErr := callToolHelper(t, srv, "update_group", map[string]interface{}{
+		"slug":        "sticky-board",
+		"workspace":   "Main",
+		"group_index": 4,
+		"markdown":    "Replaced body",
+		"color":       "amber",
+	})
+	if isErr || !strings.Contains(updGroupStickyOut, `"amber"`) || !strings.Contains(updGroupStickyOut, `"type": "sticky"`) {
+		t.Fatalf("update_group sticky failed: %s", updGroupStickyOut)
+	}
+	if _, errFlag := callToolHelper(t, srv, "update_group", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 4, "items": []map[string]interface{}{},
+	}); !errFlag {
+		t.Errorf("expected update_group setting items on sticky note to fail")
+	}
+	if _, errFlag := callToolHelper(t, srv, "update_group", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 2, "markdown": "forbidden",
+	}); !errFlag {
+		t.Errorf("expected update_group setting markdown on regular group to fail")
+	}
+
+	// 7. add_item and move_item guards for sticky notes
+	if _, errFlag := callToolHelper(t, srv, "add_item", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 0, "title": "Nope", "url": "https://example.com",
+	}); !errFlag {
+		t.Errorf("expected add_item by group_index onto sticky note to fail")
+	}
+	// Using group_title matching a sticky note should skip the sticky note and create a new regular group
+	addItemByTitleOut, isErr := callToolHelper(t, srv, "add_item", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_title": "Shared Title", "title": "Real Bookmark", "url": "https://example.org",
+	})
+	if isErr || !strings.Contains(addItemByTitleOut, `"group_index": 6`) {
+		t.Fatalf("expected add_item by group_title to skip sticky note and create regular group at index 6, got: %s", addItemByTitleOut)
+	}
+	if _, errFlag := callToolHelper(t, srv, "move_item", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 2, "item_index": 0, "target_group_index": 0,
+	}); !errFlag {
+		t.Errorf("expected move_item into sticky note to fail")
+	}
+
+	// 8. Search includes sticky notes by body & title, filters cleanly by item_type
+	searchBodyOut, isErr := callToolHelper(t, srv, "search", map[string]interface{}{
+		"query":     "Line 1",
+		"workspace": "Main",
+	})
+	if isErr {
+		t.Fatalf("search failed: %s", searchBodyOut)
+	}
+	var searchRes SearchResponse
+	if err := json.Unmarshal([]byte(searchBodyOut), &searchRes); err != nil {
+		t.Fatalf("unmarshal search response: %v", err)
+	}
+	foundSticky := false
+	for _, it := range searchRes.Items {
+		if it.ItemType == "sticky" && it.GroupIndex == 3 && it.ItemIndex == -1 && it.Title == "Scratchpad Updated" {
+			foundSticky = true
+		}
+	}
+	if !foundSticky {
+		t.Errorf("expected sticky note search match (group_index=3, item_index=-1), got: %+v", searchRes.Items)
+	}
+
+	searchStickyOnly, isErr := callToolHelper(t, srv, "search", map[string]interface{}{
+		"query":     "Sticky Board",
+		"workspace": "Main",
+		"item_type": "sticky",
+	})
+	if isErr || !strings.Contains(searchStickyOnly, `"item_type": "sticky"`) || strings.Contains(searchStickyOnly, "Real Bookmark") {
+		t.Errorf("expected only sticky items with item_type=sticky, got: %s", searchStickyOnly)
+	}
+
+	searchNoteOnly, isErr := callToolHelper(t, srv, "search", map[string]interface{}{
+		"query":     "Line 1",
+		"workspace": "Main",
+		"item_type": "note",
+	})
+	if isErr || strings.Contains(searchNoteOnly, "Scratchpad Updated") {
+		t.Errorf("expected sticky notes excluded when item_type=note, got: %s", searchNoteOnly)
+	}
+
+	// 9. delete_sticky_note guards and happy path
+	if _, errFlag := callToolHelper(t, srv, "delete_sticky_note", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 2,
+	}); !errFlag {
+		t.Errorf("expected delete_sticky_note on regular group to fail")
+	}
+	if _, errFlag := callToolHelper(t, srv, "delete_sticky_note", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 99,
+	}); !errFlag {
+		t.Errorf("expected delete_sticky_note out of range to fail")
+	}
+
+	delStickyOut, isErr := callToolHelper(t, srv, "delete_sticky_note", map[string]interface{}{
+		"slug": "sticky-board", "workspace": "Main", "group_index": 4,
+	})
+	if isErr || !strings.Contains(delStickyOut, `"deleted"`) {
+		t.Fatalf("delete_sticky_note failed: %s", delStickyOut)
 	}
 }
 

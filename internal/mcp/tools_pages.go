@@ -15,6 +15,11 @@ import (
 	"github.com/ExoDeck/exodeck/internal/storage"
 )
 
+var groupColorEnum = []string{
+	"none", "yellow", "amber", "orange", "red", "rose", "pink", "purple",
+	"violet", "indigo", "blue", "sky", "cyan", "teal", "emerald", "green", "lime",
+}
+
 func (s *Server) registerPageTools() {
 	itemInputSchema := objectSchema(map[string]interface{}{
 		"title":         stringProp("Item title."),
@@ -26,14 +31,17 @@ func (s *Server) registerPageTools() {
 	}, "title")
 
 	groupInputSchema := objectSchema(map[string]interface{}{
-		"title": stringProp("Group title."),
-		"items": arrayProp("Items in this group.", itemInputSchema),
+		"title":    stringProp("Group or sticky note title."),
+		"type":     stringEnumProp("Box type: 'group' (default) for a link/note/task box, or 'sticky' for a Markdown sticky note.", "group", "sticky"),
+		"markdown": stringProp("Plain Markdown content (used only when type='sticky')."),
+		"color":    stringEnumProp("Optional card background color ('none', 'yellow', 'amber', 'orange', 'red', 'rose', 'pink', 'purple', 'violet', 'indigo', 'blue', 'sky', 'cyan', 'teal', 'emerald', 'green', 'lime'). Sticky notes default to 'yellow'; groups default to 'none'.", groupColorEnum...),
+		"items":    arrayProp("Items in this group (only for regular groups, not sticky notes).", itemInputSchema),
 	}, "title")
 
 	// 11. get_grid_page
 	s.registerTool(
 		"get_grid_page",
-		"Read a Grid page (.grid) including all groups and items. Note Markdown is decoded to plain text; encrypted/password items are masked.",
+		"Read a Grid page (.grid) including all groups, sticky notes, card colors, and items. Note Markdown is decoded to plain text; encrypted/password items are masked.",
 		objectSchema(map[string]interface{}{
 			"slug":      stringProp("Page slug."),
 			"workspace": stringProp("Optional workspace name (defaults to primary workspace)."),
@@ -44,13 +52,13 @@ func (s *Server) registerPageTools() {
 	// 12. create_grid_page
 	s.registerTool(
 		"create_grid_page",
-		"Create a new Grid page (.grid) with optional groups and items (links, notes, tasks).",
+		"Create a new Grid page (.grid) with optional groups, sticky notes, card colors, and items (links, notes, tasks).",
 		objectSchema(map[string]interface{}{
 			"page_name":   stringProp("Display name of the page (use 'Folder / Subfolder / Name' for hierarchy)."),
 			"workspace":   stringProp("Optional workspace name (defaults to primary workspace)."),
 			"hidden":      boolProp("Whether the page is hidden from sidebar navigation (default: false)."),
 			"custom_sort": boolProp("Whether groups/items preserve manual order instead of alphabetical sort (default: false)."),
-			"groups":      arrayProp("Optional initial groups for the grid page.", groupInputSchema),
+			"groups":      arrayProp("Optional initial groups or sticky notes for the grid page.", groupInputSchema),
 		}, "page_name"),
 		s.toolCreateGridPage,
 	)
@@ -58,14 +66,14 @@ func (s *Server) registerPageTools() {
 	// 13. update_grid_page
 	s.registerTool(
 		"update_grid_page",
-		"Update an existing Grid page's name, hidden/custom_sort flags, or groups.",
+		"Update an existing Grid page's name, hidden/custom_sort flags, or groups/sticky notes.",
 		objectSchema(map[string]interface{}{
 			"slug":        stringProp("Current slug of the grid page."),
 			"workspace":   stringProp("Optional workspace name."),
 			"page_name":   stringProp("Optional new page name (renames slug and updates internal links if changed)."),
 			"hidden":      boolProp("Optional hidden status."),
 			"custom_sort": boolProp("Optional custom_sort status."),
-			"groups":      arrayProp("Optional replacement list of groups.", groupInputSchema),
+			"groups":      arrayProp("Optional replacement list of groups and sticky notes.", groupInputSchema),
 		}, "slug"),
 		s.toolUpdateGridPage,
 	)
@@ -84,12 +92,15 @@ func (s *Server) registerPageTools() {
 	// 15. add_group
 	s.registerTool(
 		"add_group",
-		"Add a new group to a Grid page.",
+		"Add a new group or sticky note to a Grid page.",
 		objectSchema(map[string]interface{}{
 			"slug":      stringProp("Grid page slug."),
-			"title":     stringProp("Title of the new group."),
+			"title":     stringProp("Title of the new group or sticky note."),
 			"workspace": stringProp("Optional workspace name."),
-			"items":     arrayProp("Optional initial items in the group.", itemInputSchema),
+			"type":      stringEnumProp("Box type: 'group' (default) or 'sticky'.", "group", "sticky"),
+			"markdown":  stringProp("Plain Markdown content (used only when type='sticky')."),
+			"color":     stringEnumProp("Optional card background color.", groupColorEnum...),
+			"items":     arrayProp("Optional initial items in the group (only for regular groups).", itemInputSchema),
 		}, "slug", "title"),
 		s.toolAddGroup,
 	)
@@ -97,13 +108,16 @@ func (s *Server) registerPageTools() {
 	// 16. update_group
 	s.registerTool(
 		"update_group",
-		"Update a group's title or items on a Grid page.",
+		"Update a group or sticky note's title, color, Markdown content (for sticky notes), or items (for regular groups) on a Grid page.",
 		objectSchema(map[string]interface{}{
 			"slug":        stringProp("Grid page slug."),
-			"group_index": intProp("Zero-based index of the group to update."),
-			"title":       stringProp("Optional new title for the group."),
+			"group_index": intProp("Zero-based index of the group or sticky note to update."),
+			"title":       stringProp("Optional new title."),
 			"workspace":   stringProp("Optional workspace name."),
-			"items":       arrayProp("Optional replacement items for the group.", itemInputSchema),
+			"markdown":    stringProp("Optional Markdown content (only for sticky notes)."),
+			"append":      boolProp("If true, appends markdown to the existing sticky note content instead of replacing it."),
+			"color":       stringEnumProp("Optional card background color (use 'none' for transparent).", groupColorEnum...),
+			"items":       arrayProp("Optional replacement items for a regular group.", itemInputSchema),
 		}, "slug", "group_index"),
 		s.toolUpdateGroup,
 	)
@@ -111,10 +125,10 @@ func (s *Server) registerPageTools() {
 	// 17. delete_group
 	s.registerTool(
 		"delete_group",
-		"Delete a group at group_index from a Grid page.",
+		"Delete a group or sticky note at group_index from a Grid page.",
 		objectSchema(map[string]interface{}{
 			"slug":        stringProp("Grid page slug."),
-			"group_index": intProp("Zero-based index of the group to delete."),
+			"group_index": intProp("Zero-based index of the group or sticky note to delete."),
 			"workspace":   stringProp("Optional workspace name."),
 		}, "slug", "group_index"),
 		s.toolDeleteGroup,
@@ -123,10 +137,10 @@ func (s *Server) registerPageTools() {
 	// 18. move_group
 	s.registerTool(
 		"move_group",
-		"Move a group from one Grid page to another Grid page.",
+		"Move a group or sticky note from one Grid page to another Grid page.",
 		objectSchema(map[string]interface{}{
 			"slug":             stringProp("Source grid page slug."),
-			"group_index":      intProp("Zero-based index of the group to move."),
+			"group_index":      intProp("Zero-based index of the group or sticky note to move."),
 			"target_slug":      stringProp("Destination grid page slug."),
 			"workspace":        stringProp("Optional source workspace name."),
 			"target_workspace": stringProp("Optional destination workspace name (defaults to source workspace)."),
@@ -364,6 +378,48 @@ func (s *Server) registerPageTools() {
 		}, "slug"),
 		s.toolDeleteBpmn,
 	)
+
+	// 39. add_sticky_note
+	s.registerTool(
+		"add_sticky_note",
+		"Add a new Markdown Sticky Note card to a Grid page.",
+		objectSchema(map[string]interface{}{
+			"slug":      stringProp("Grid page slug."),
+			"title":     stringProp("Title of the sticky note."),
+			"markdown":  stringProp("Plain Markdown content for the sticky note."),
+			"color":     stringEnumProp("Optional sticky note color (defaults to 'yellow'). Use 'none' for transparent.", groupColorEnum...),
+			"workspace": stringProp("Optional workspace name."),
+		}, "slug", "title"),
+		s.toolAddStickyNote,
+	)
+
+	// 40. update_sticky_note
+	s.registerTool(
+		"update_sticky_note",
+		"Update or append Markdown content, title, or color of an existing Sticky Note card on a Grid page.",
+		objectSchema(map[string]interface{}{
+			"slug":        stringProp("Grid page slug."),
+			"group_index": intProp("Zero-based index of the sticky note in the page's groups array."),
+			"title":       stringProp("Optional new title for the sticky note."),
+			"markdown":    stringProp("Optional new Markdown content (or content to append when append=true)."),
+			"append":      boolProp("If true, appends markdown to the existing sticky note content instead of replacing it."),
+			"color":       stringEnumProp("Optional new sticky note color (use 'none' for transparent).", groupColorEnum...),
+			"workspace":   stringProp("Optional workspace name."),
+		}, "slug", "group_index"),
+		s.toolUpdateStickyNote,
+	)
+
+	// 41. delete_sticky_note
+	s.registerTool(
+		"delete_sticky_note",
+		"Delete a Sticky Note card at group_index from a Grid page.",
+		objectSchema(map[string]interface{}{
+			"slug":        stringProp("Grid page slug."),
+			"group_index": intProp("Zero-based index of the sticky note in the page's groups array."),
+			"workspace":   stringProp("Optional workspace name."),
+		}, "slug", "group_index"),
+		s.toolDeleteStickyNote,
+	)
 }
 
 // Grid Page types for MCP
@@ -383,10 +439,13 @@ type MCPItem struct {
 	Locked      *bool   `json:"locked,omitempty"`
 }
 
-// MCPGroup is the MCP representation of a Group.
+// MCPGroup is the MCP representation of a Group or Sticky Note.
 type MCPGroup struct {
-	Title string    `json:"title"`
-	Items []MCPItem `json:"items"`
+	Title    string    `json:"title"`
+	Type     *string   `json:"type,omitempty"`
+	Markdown *string   `json:"markdown,omitempty"`
+	Color    *string   `json:"color,omitempty"`
+	Items    []MCPItem `json:"items"`
 }
 
 // MCPPage is the MCP representation of a Grid Page.
@@ -414,10 +473,31 @@ type MCPItemInput struct {
 	TaskDueDate *string `json:"task_due_date,omitempty"`
 }
 
-// MCPGroupInput represents input parameters for creating a group.
+// MCPGroupInput represents input parameters for creating a group or sticky note.
 type MCPGroupInput struct {
-	Title string         `json:"title"`
-	Items []MCPItemInput `json:"items,omitempty"`
+	Title    string         `json:"title"`
+	Type     *string        `json:"type,omitempty"`
+	Markdown *string        `json:"markdown,omitempty"`
+	Text     *string        `json:"text,omitempty"`
+	Color    *string        `json:"color,omitempty"`
+	Items    []MCPItemInput `json:"items,omitempty"`
+}
+
+func isStickyGroup(g models.Group) bool {
+	return g.Type != nil && strings.EqualFold(*g.Type, "sticky")
+}
+
+func normalizeGroupColor(raw string) (string, error) {
+	c := strings.ToLower(strings.TrimSpace(raw))
+	if c == "" {
+		return "none", nil
+	}
+	for _, valid := range groupColorEnum {
+		if c == valid {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("invalid color %q; valid colors are: %s", raw, strings.Join(groupColorEnum, ", "))
 }
 
 func isSensitiveItem(item models.Item) bool {
@@ -475,17 +555,34 @@ func sanitizeItemForRead(item models.Item) MCPItem {
 	return out
 }
 
+func sanitizeGroupForRead(g models.Group) MCPGroup {
+	items := make([]MCPItem, 0, len(g.Items))
+	for _, it := range g.Items {
+		items = append(items, sanitizeItemForRead(it))
+	}
+	out := MCPGroup{
+		Title: g.Title,
+		Type:  g.Type,
+		Color: g.Color,
+		Items: items,
+	}
+	if isStickyGroup(g) {
+		md := ""
+		if g.Text != nil {
+			md = *g.Text
+		}
+		out.Markdown = &md
+	} else if g.Text != nil {
+		md := *g.Text
+		out.Markdown = &md
+	}
+	return out
+}
+
 func sanitizePageForRead(slug, workspace string, page models.Page) MCPPage {
 	groups := make([]MCPGroup, 0, len(page.Groups))
 	for _, g := range page.Groups {
-		items := make([]MCPItem, 0, len(g.Items))
-		for _, it := range g.Items {
-			items = append(items, sanitizeItemForRead(it))
-		}
-		groups = append(groups, MCPGroup{
-			Title: g.Title,
-			Items: items,
-		})
+		groups = append(groups, sanitizeGroupForRead(g))
 	}
 	return MCPPage{
 		Slug:       slug,
@@ -555,27 +652,148 @@ func buildItemFromInput(in MCPItemInput) (models.Item, error) {
 	return item, nil
 }
 
+func buildItemsFromInput(itemsIn []MCPItemInput) ([]models.Item, error) {
+	items := make([]models.Item, 0, len(itemsIn))
+	for _, itIn := range itemsIn {
+		it, err := buildItemFromInput(itIn)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, it)
+	}
+	return items, nil
+}
+
+func buildGroupFromInput(gIn MCPGroupInput) (models.Group, error) {
+	gTitle := strings.TrimSpace(gIn.Title)
+	if gTitle == "" {
+		return models.Group{}, errors.New("group 'title' cannot be empty")
+	}
+
+	boxType := ""
+	if gIn.Type != nil {
+		boxType = strings.ToLower(strings.TrimSpace(*gIn.Type))
+	}
+	if boxType != "" && boxType != "group" && boxType != "sticky" {
+		return models.Group{}, fmt.Errorf("invalid group type %q; expected 'group' or 'sticky'", *gIn.Type)
+	}
+
+	mdContent := gIn.Markdown
+	if mdContent == nil && gIn.Text != nil {
+		mdContent = gIn.Text
+	}
+
+	var colorPtr *string
+	if gIn.Color != nil {
+		c, err := normalizeGroupColor(*gIn.Color)
+		if err != nil {
+			return models.Group{}, err
+		}
+		colorPtr = &c
+	}
+
+	if boxType == "sticky" {
+		if len(gIn.Items) > 0 {
+			return models.Group{}, errors.New("sticky notes cannot contain items")
+		}
+		stickyType := "sticky"
+		mdVal := ""
+		if mdContent != nil {
+			mdVal = *mdContent
+		}
+		if colorPtr == nil {
+			defaultColor := "yellow"
+			colorPtr = &defaultColor
+		}
+		return models.Group{
+			Title: gTitle,
+			Type:  &stickyType,
+			Text:  &mdVal,
+			Color: colorPtr,
+			Items: []models.Item{},
+		}, nil
+	}
+
+	if mdContent != nil && *mdContent != "" {
+		return models.Group{}, errors.New("only sticky notes can have markdown content (set type='sticky' or use add_sticky_note)")
+	}
+
+	items, err := buildItemsFromInput(gIn.Items)
+	if err != nil {
+		return models.Group{}, err
+	}
+
+	return models.Group{
+		Title: gTitle,
+		Color: colorPtr,
+		Items: items,
+	}, nil
+}
+
 func buildGroupsFromInput(groupsIn []MCPGroupInput) ([]models.Group, error) {
 	groups := make([]models.Group, 0, len(groupsIn))
 	for _, gIn := range groupsIn {
-		gTitle := strings.TrimSpace(gIn.Title)
-		if gTitle == "" {
-			return nil, errors.New("group 'title' cannot be empty")
+		grp, err := buildGroupFromInput(gIn)
+		if err != nil {
+			return nil, err
 		}
-		items := make([]models.Item, 0, len(gIn.Items))
-		for _, itIn := range gIn.Items {
-			it, err := buildItemFromInput(itIn)
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, it)
-		}
-		groups = append(groups, models.Group{
-			Title: gTitle,
-			Items: items,
-		})
+		groups = append(groups, grp)
 	}
 	return groups, nil
+}
+
+func applyGroupUpdate(group *models.Group, title, markdown, text, color *string, appendMD bool, items *[]MCPItemInput) error {
+	if title != nil {
+		trimmed := strings.TrimSpace(*title)
+		if trimmed == "" {
+			return errors.New("group title cannot be empty")
+		}
+		group.Title = trimmed
+	}
+	if color != nil {
+		c, err := normalizeGroupColor(*color)
+		if err != nil {
+			return err
+		}
+		group.Color = &c
+	}
+
+	mdContent := markdown
+	if mdContent == nil && text != nil {
+		mdContent = text
+	}
+
+	if isStickyGroup(*group) {
+		if items != nil {
+			return errors.New("cannot set items on a sticky note")
+		}
+		if mdContent != nil {
+			newMD := *mdContent
+			if appendMD && group.Text != nil && *group.Text != "" {
+				newMD = strings.TrimRight(*group.Text, "\n") + "\n\n" + newMD
+			}
+			group.Text = &newMD
+		}
+		if group.Items == nil {
+			group.Items = []models.Item{}
+		}
+		return nil
+	}
+
+	if mdContent != nil && *mdContent != "" {
+		return errors.New("cannot set markdown content on a regular group; only sticky notes support markdown")
+	}
+	if items != nil {
+		if groupContainsSensitiveItems(*group) {
+			return errors.New("cannot replace items in a group containing encrypted/password items")
+		}
+		builtItems, err := buildItemsFromInput(*items)
+		if err != nil {
+			return err
+		}
+		group.Items = builtItems
+	}
+	return nil
 }
 
 func (s *Server) toolGetGridPage(_ context.Context, args json.RawMessage) (interface{}, error) {
@@ -737,43 +955,132 @@ func (s *Server) toolDeleteGridPage(_ context.Context, args json.RawMessage) (in
 	}, nil
 }
 
+func (s *Server) appendGroupToPage(slug, workspace string, gIn MCPGroupInput) (int, string, models.Group, error) {
+	wsName, _, st, errMsg := s.Store.ResolveWorkspace(workspace)
+	if st != 0 {
+		return 0, "", models.Group{}, errors.New(errMsg)
+	}
+
+	grp, err := buildGroupFromInput(gIn)
+	if err != nil {
+		return 0, "", models.Group{}, err
+	}
+
+	page, status, msg := s.Store.ReadPage(slug, wsName)
+	if status != 0 {
+		return 0, "", models.Group{}, errors.New(msg)
+	}
+
+	page.Groups = append(page.Groups, grp)
+	if wSt, wMsg := s.Store.WritePage(slug, page, wsName); wSt != 0 {
+		return 0, "", models.Group{}, errors.New(wMsg)
+	}
+
+	return len(page.Groups) - 1, wsName, grp, nil
+}
+
+func (s *Server) updateGroupOnPage(slug, workspace string, groupIndex int, requireSticky bool, title, markdown, text, color *string, appendMD bool, items *[]MCPItemInput) (string, models.Group, error) {
+	wsName, _, st, errMsg := s.Store.ResolveWorkspace(workspace)
+	if st != 0 {
+		return "", models.Group{}, errors.New(errMsg)
+	}
+
+	page, status, msg := s.Store.ReadPage(slug, wsName)
+	if status != 0 {
+		return "", models.Group{}, errors.New(msg)
+	}
+	if groupIndex < 0 || groupIndex >= len(page.Groups) {
+		return "", models.Group{}, fmt.Errorf("group_index %d is out of range (page has %d groups)", groupIndex, len(page.Groups))
+	}
+
+	group := &page.Groups[groupIndex]
+	if requireSticky && !isStickyGroup(*group) {
+		return "", models.Group{}, fmt.Errorf("group at index %d is not a sticky note", groupIndex)
+	}
+
+	if err := applyGroupUpdate(group, title, markdown, text, color, appendMD, items); err != nil {
+		return "", models.Group{}, err
+	}
+
+	if wSt, wMsg := s.Store.WritePage(slug, page, wsName); wSt != 0 {
+		return "", models.Group{}, errors.New(wMsg)
+	}
+
+	return wsName, *group, nil
+}
+
+func (s *Server) deleteGroupAt(slug, workspace string, groupIndex int, requireSticky bool) (map[string]interface{}, error) {
+	wsName, _, st, errMsg := s.Store.ResolveWorkspace(workspace)
+	if st != 0 {
+		return nil, errors.New(errMsg)
+	}
+	page, status, msg := s.Store.ReadPage(slug, wsName)
+	if status != 0 {
+		return nil, errors.New(msg)
+	}
+	if groupIndex < 0 || groupIndex >= len(page.Groups) {
+		return nil, fmt.Errorf("group_index %d is out of range (page has %d groups)", groupIndex, len(page.Groups))
+	}
+	if requireSticky && !isStickyGroup(page.Groups[groupIndex]) {
+		return nil, fmt.Errorf("group at index %d is not a sticky note", groupIndex)
+	}
+	if groupContainsSensitiveItems(page.Groups[groupIndex]) {
+		return nil, errors.New("cannot delete a group containing encrypted/password items via MCP")
+	}
+
+	page.Groups = append(page.Groups[:groupIndex], page.Groups[groupIndex+1:]...)
+	if wSt, wMsg := s.Store.WritePage(slug, page, wsName); wSt != 0 {
+		return nil, errors.New(wMsg)
+	}
+
+	return map[string]interface{}{
+		"slug":        slug,
+		"workspace":   wsName,
+		"group_index": groupIndex,
+		"status":      "deleted",
+	}, nil
+}
+
 func (s *Server) toolAddGroup(_ context.Context, args json.RawMessage) (interface{}, error) {
 	var in struct {
 		Slug      string         `json:"slug"`
 		Title     string         `json:"title"`
 		Workspace string         `json:"workspace"`
+		Type      *string        `json:"type"`
+		Markdown  *string        `json:"markdown"`
+		Text      *string        `json:"text"`
+		Color     *string        `json:"color"`
 		Items     []MCPItemInput `json:"items"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	wsName, _, st, errMsg := s.Store.ResolveWorkspace(in.Workspace)
-	if st != 0 {
-		return nil, errors.New(errMsg)
-	}
-
-	groups, err := buildGroupsFromInput([]MCPGroupInput{{Title: in.Title, Items: in.Items}})
+	idx, wsName, grp, err := s.appendGroupToPage(in.Slug, in.Workspace, MCPGroupInput{
+		Title:    in.Title,
+		Type:     in.Type,
+		Markdown: in.Markdown,
+		Text:     in.Text,
+		Color:    in.Color,
+		Items:    in.Items,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	page, status, msg := s.Store.ReadPage(in.Slug, wsName)
-	if status != 0 {
-		return nil, errors.New(msg)
-	}
-
-	page.Groups = append(page.Groups, groups[0])
-	if wSt, wMsg := s.Store.WritePage(in.Slug, page, wsName); wSt != 0 {
-		return nil, errors.New(wMsg)
-	}
-
-	return map[string]interface{}{
+	resp := map[string]interface{}{
 		"slug":        in.Slug,
 		"workspace":   wsName,
-		"group_index": len(page.Groups) - 1,
-		"group_title": groups[0].Title,
-	}, nil
+		"group_index": idx,
+		"group_title": grp.Title,
+	}
+	if isStickyGroup(grp) {
+		resp["type"] = "sticky"
+	}
+	if grp.Color != nil {
+		resp["color"] = *grp.Color
+	}
+	return resp, nil
 }
 
 func (s *Server) toolUpdateGroup(_ context.Context, args json.RawMessage) (interface{}, error) {
@@ -782,55 +1089,35 @@ func (s *Server) toolUpdateGroup(_ context.Context, args json.RawMessage) (inter
 		GroupIndex int             `json:"group_index"`
 		Title      *string         `json:"title"`
 		Workspace  string          `json:"workspace"`
+		Markdown   *string         `json:"markdown"`
+		Text       *string         `json:"text"`
+		Append     bool            `json:"append"`
+		Color      *string         `json:"color"`
 		Items      *[]MCPItemInput `json:"items"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	wsName, _, st, errMsg := s.Store.ResolveWorkspace(in.Workspace)
-	if st != 0 {
-		return nil, errors.New(errMsg)
+	wsName, grp, err := s.updateGroupOnPage(in.Slug, in.Workspace, in.GroupIndex, false, in.Title, in.Markdown, in.Text, in.Color, in.Append, in.Items)
+	if err != nil {
+		return nil, err
 	}
 
-	page, status, msg := s.Store.ReadPage(in.Slug, wsName)
-	if status != 0 {
-		return nil, errors.New(msg)
-	}
-	if in.GroupIndex < 0 || in.GroupIndex >= len(page.Groups) {
-		return nil, fmt.Errorf("group_index %d is out of range (page has %d groups)", in.GroupIndex, len(page.Groups))
-	}
-
-	group := &page.Groups[in.GroupIndex]
-	if in.Title != nil {
-		trimmed := strings.TrimSpace(*in.Title)
-		if trimmed == "" {
-			return nil, errors.New("group title cannot be empty")
-		}
-		group.Title = trimmed
-	}
-	if in.Items != nil {
-		if groupContainsSensitiveItems(*group) {
-			return nil, errors.New("cannot replace items in a group containing encrypted/password items")
-		}
-		built, err := buildGroupsFromInput([]MCPGroupInput{{Title: group.Title, Items: *in.Items}})
-		if err != nil {
-			return nil, err
-		}
-		group.Items = built[0].Items
-	}
-
-	if wSt, wMsg := s.Store.WritePage(in.Slug, page, wsName); wSt != 0 {
-		return nil, errors.New(wMsg)
-	}
-
-	return map[string]interface{}{
+	resp := map[string]interface{}{
 		"slug":        in.Slug,
 		"workspace":   wsName,
 		"group_index": in.GroupIndex,
-		"group_title": group.Title,
-		"item_count":  len(group.Items),
-	}, nil
+		"group_title": grp.Title,
+		"item_count":  len(grp.Items),
+	}
+	if isStickyGroup(grp) {
+		resp["type"] = "sticky"
+	}
+	if grp.Color != nil {
+		resp["color"] = *grp.Color
+	}
+	return resp, nil
 }
 
 func (s *Server) toolDeleteGroup(_ context.Context, args json.RawMessage) (interface{}, error) {
@@ -842,33 +1129,80 @@ func (s *Server) toolDeleteGroup(_ context.Context, args json.RawMessage) (inter
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
+	return s.deleteGroupAt(in.Slug, in.Workspace, in.GroupIndex, false)
+}
 
-	wsName, _, st, errMsg := s.Store.ResolveWorkspace(in.Workspace)
-	if st != 0 {
-		return nil, errors.New(errMsg)
+func (s *Server) toolAddStickyNote(_ context.Context, args json.RawMessage) (interface{}, error) {
+	var in struct {
+		Slug      string  `json:"slug"`
+		Title     string  `json:"title"`
+		Markdown  *string `json:"markdown"`
+		Text      *string `json:"text"`
+		Color     *string `json:"color"`
+		Workspace string  `json:"workspace"`
 	}
-	page, status, msg := s.Store.ReadPage(in.Slug, wsName)
-	if status != 0 {
-		return nil, errors.New(msg)
-	}
-	if in.GroupIndex < 0 || in.GroupIndex >= len(page.Groups) {
-		return nil, fmt.Errorf("group_index %d is out of range (page has %d groups)", in.GroupIndex, len(page.Groups))
-	}
-	if groupContainsSensitiveItems(page.Groups[in.GroupIndex]) {
-		return nil, errors.New("cannot delete a group containing encrypted/password items via MCP")
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	page.Groups = append(page.Groups[:in.GroupIndex], page.Groups[in.GroupIndex+1:]...)
-	if wSt, wMsg := s.Store.WritePage(in.Slug, page, wsName); wSt != 0 {
-		return nil, errors.New(wMsg)
+	stickyType := "sticky"
+	idx, wsName, grp, err := s.appendGroupToPage(in.Slug, in.Workspace, MCPGroupInput{
+		Title:    in.Title,
+		Type:     &stickyType,
+		Markdown: in.Markdown,
+		Text:     in.Text,
+		Color:    in.Color,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"slug":        in.Slug,
+		"workspace":   wsName,
+		"group_index": idx,
+		"sticky_note": sanitizeGroupForRead(grp),
+	}, nil
+}
+
+func (s *Server) toolUpdateStickyNote(_ context.Context, args json.RawMessage) (interface{}, error) {
+	var in struct {
+		Slug       string  `json:"slug"`
+		GroupIndex int     `json:"group_index"`
+		Title      *string `json:"title"`
+		Markdown   *string `json:"markdown"`
+		Text       *string `json:"text"`
+		Append     bool    `json:"append"`
+		Color      *string `json:"color"`
+		Workspace  string  `json:"workspace"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	wsName, grp, err := s.updateGroupOnPage(in.Slug, in.Workspace, in.GroupIndex, true, in.Title, in.Markdown, in.Text, in.Color, in.Append, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return map[string]interface{}{
 		"slug":        in.Slug,
 		"workspace":   wsName,
 		"group_index": in.GroupIndex,
-		"status":      "deleted",
+		"sticky_note": sanitizeGroupForRead(grp),
 	}, nil
+}
+
+func (s *Server) toolDeleteStickyNote(_ context.Context, args json.RawMessage) (interface{}, error) {
+	var in struct {
+		Slug       string `json:"slug"`
+		GroupIndex int    `json:"group_index"`
+		Workspace  string `json:"workspace"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+	return s.deleteGroupAt(in.Slug, in.Workspace, in.GroupIndex, true)
 }
 
 func (s *Server) toolMoveGroup(_ context.Context, args json.RawMessage) (interface{}, error) {
@@ -968,10 +1302,16 @@ func (s *Server) toolAddItem(_ context.Context, args json.RawMessage) (interface
 		if *in.GroupIndex < 0 || *in.GroupIndex >= len(page.Groups) {
 			return nil, fmt.Errorf("group_index %d is out of range (page has %d groups)", *in.GroupIndex, len(page.Groups))
 		}
+		if isStickyGroup(page.Groups[*in.GroupIndex]) {
+			return nil, fmt.Errorf("cannot add items to sticky note at group_index %d", *in.GroupIndex)
+		}
 		targetGroupIdx = *in.GroupIndex
 	} else if in.GroupTitle != nil && strings.TrimSpace(*in.GroupTitle) != "" {
 		gTitle := strings.TrimSpace(*in.GroupTitle)
 		for i, g := range page.Groups {
+			if isStickyGroup(g) {
+				continue
+			}
 			if strings.EqualFold(g.Title, gTitle) {
 				targetGroupIdx = i
 				break
@@ -1187,6 +1527,9 @@ func (s *Server) toolMoveItem(_ context.Context, args json.RawMessage) (interfac
 	}
 	if in.TargetGroupIndex < 0 || in.TargetGroupIndex >= len(page.Groups) {
 		return nil, fmt.Errorf("target_group_index %d is out of range", in.TargetGroupIndex)
+	}
+	if isStickyGroup(page.Groups[in.TargetGroupIndex]) {
+		return nil, fmt.Errorf("cannot move items into sticky note at target_group_index %d", in.TargetGroupIndex)
 	}
 	if in.GroupIndex == in.TargetGroupIndex {
 		return nil, errors.New("source and target groups are the same")
