@@ -1,5 +1,5 @@
 // reorganize.js — Edit/Reorganize mode for groups and items
-import { state, apiFetch, withLocation } from './app.js';
+import { state, apiFetch, withLocation, refreshPages } from './app.js';
 import { renderPage } from './content.js';
 import { buildGroupHeightKey, getGroupOccurrenceIndex, migrateGroupMaxHeight } from './groupbox-resize.js';
 
@@ -275,7 +275,7 @@ function _attachSidebarDropZones() {
       if (!raw) return;
       let data;
       try { data = JSON.parse(raw); } catch { return; }
-      await _moveGroupToPage(
+      await moveGroupToPage(
         data.sourceSlug, data.sourceLocation, data.groupIndex,
         targetSlug, targetLocation
       );
@@ -509,7 +509,7 @@ function _attachItemReorderZones() {
 // Move actions
 // ---------------------------------------------------------------------------
 
-async function _moveGroupToPage(sourceSlug, sourceLocation, groupIndex, targetSlug, targetLocation) {
+export async function moveGroupToPage(sourceSlug, sourceLocation, groupIndex, targetSlug, targetLocation) {
   const movedGroup =
     sourceSlug === state.currentSlug && (sourceLocation ?? null) === (state.currentLocation ?? null)
       ? state.currentPage?.groups?.[groupIndex]
@@ -534,6 +534,8 @@ async function _moveGroupToPage(sourceSlug, sourceLocation, groupIndex, targetSl
     if (oldHeightKey && movedGroup) {
       migrateGroupMaxHeight(oldHeightKey, buildGroupHeightKey(targetLocation, targetSlug, movedGroup.title ?? '', 0));
     }
+    await refreshPages();
+    document.dispatchEvent(new CustomEvent('exodeck:pages-changed'));
     // Reload and re-render if the move was from the currently displayed page
     if (
       sourceSlug === state.currentSlug &&
@@ -543,7 +545,7 @@ async function _moveGroupToPage(sourceSlug, sourceLocation, groupIndex, targetSl
       state.currentPage = updated;
       renderPage(state.currentPage);
     }
-    _showToast(`Group moved to "${_pageName(targetSlug, targetLocation)}".`);
+    _showToast(`Moved to "${_pageName(targetSlug, targetLocation)}".`);
   } catch (err) {
     _showToast(`Move failed: ${err.message}`);
     console.error('[ExoDeck] Move group failed:', err);

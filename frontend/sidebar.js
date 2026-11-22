@@ -2,6 +2,8 @@
 import { state, apiFetch, refreshPages, withLocation, isHelpWorkspace, showStyledConfirmModal } from './app.js';
 import {
   parseApiError,
+  showErrorBubble,
+  createEditorActionButtons,
   handleTreeNavArrowDown,
   handleTreeNavEnd
 } from './ui-utils.js';
@@ -11,6 +13,7 @@ import { fetchWhiteboardPage, createWhiteboardPage, printWhiteboardPage, unmount
 import { fetchBpmnPage, createBpmnPage, printBpmnPage, unmountBpmn } from './bpmn.js';
 import { openModal, openConfirmModal } from './modal.js';
 import { updateVaultBadge } from './vault.js';
+import { isEditModeActive, exitEditMode } from './reorganize.js';
 
 const STORAGE_PINNED_KEY = 'sidebar-pinned';
 const STORAGE_WIDTH_KEY = 'sidebar-width';
@@ -282,6 +285,7 @@ function applySyncStatusToDOM(loc, statusData) {
 // DOM builders
 // ---------------------------------------------------------------------------
 
+const SVG_INFO = `<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">info</span>`;
 const SVG_LINK = `<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">open_in_new</span>`;
 const SVG_TRASH = `<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">delete</span>`;
 const SVG_MOVE = `<span class="material-symbols-outlined" style="font-size: 16px;" aria-hidden="true">open_with</span>`;
@@ -434,7 +438,175 @@ async function buildInfoModalContent(pageMeta, location, slug) {
   return contentContainer;
 }
 
-export function createPageActionMenu(slug, name, pageType, location, inHeader = false) {
+export function buildActionMenuItem(def, closeMenu) {
+  if (def.separator) {
+    const sep = document.createElement('hr');
+    sep.className = 'add-page-menu__separator';
+    sep.setAttribute('aria-hidden', 'true');
+    return sep;
+  }
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'add-page-menu__item';
+  if (def.danger) btn.classList.add('add-page-menu__item--danger');
+  if (def.active) btn.classList.add('add-page-menu__item--active');
+  if (def.id) btn.id = def.id;
+  if (def.action) btn.dataset.action = def.action;
+  if (def.title) btn.title = def.title;
+
+  if (def.iconHtml) {
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'add-page-menu__icon';
+    iconWrap.setAttribute('aria-hidden', 'true');
+    iconWrap.innerHTML = def.iconHtml;
+    btn.appendChild(iconWrap);
+  } else if (def.icon) {
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'material-symbols-outlined';
+    iconSpan.style.fontSize = '16px';
+    if (def.iconColor) iconSpan.style.color = def.iconColor;
+    iconSpan.setAttribute('aria-hidden', 'true');
+    iconSpan.textContent = def.icon;
+    btn.appendChild(iconSpan);
+  }
+
+  const labelSpan = document.createElement('span');
+  labelSpan.textContent = def.label;
+  btn.appendChild(labelSpan);
+
+  if (def.badge !== undefined && def.badge !== null && def.badge !== '') {
+    const badgeSpan = document.createElement('span');
+    badgeSpan.className = 'menu-count-badge';
+    badgeSpan.textContent = String(def.badge);
+    btn.appendChild(badgeSpan);
+  }
+
+  if (def.shortcut) {
+    const shortcutSpan = document.createElement('span');
+    shortcutSpan.className = 'menu-shortcut';
+    shortcutSpan.textContent = def.shortcut;
+    btn.appendChild(shortcutSpan);
+  }
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu?.();
+    def.onClick?.(e);
+  });
+
+  return btn;
+}
+
+function getVisibleActionMenuItems(menuPanel) {
+  return Array.from(menuPanel.querySelectorAll('button.add-page-menu__item'))
+    .filter(btn => !btn.disabled && !btn.hidden && !btn.closest('[hidden]'));
+}
+
+export function closeActionMenuPanel(menuTrigger, menuPanel) {
+  menuPanel.classList.remove('add-page-menu--open');
+  menuTrigger?.setAttribute('aria-expanded', 'false');
+  if (document.activeElement instanceof HTMLElement && menuPanel.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
+}
+
+export function attachActionMenuKeydown(menuPanel, closeMenu) {
+  menuPanel.addEventListener('keydown', (e) => {
+    if (!menuPanel.classList.contains('add-page-menu--open')) return;
+    const items = getVisibleActionMenuItems(menuPanel);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      return;
+    }
+    if (items.length === 0) return;
+    const idx = items.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(idx + 1) % items.length].focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    }
+  });
+}
+
+export function wirePageActionMenu(menuTrigger, menuPanel, closeMenu, renderExtraItems, headerOptions = null) {
+  menuTrigger.setAttribute('aria-haspopup', 'menu');
+  menuTrigger.setAttribute('aria-expanded', 'false');
+
+  attachActionMenuKeydown(menuPanel, closeMenu);
+
+  menuTrigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const opened = togglePositionedMenuPanel(menuTrigger, menuPanel, renderExtraItems);
+    if (opened && e.detail === 0) {
+      getVisibleActionMenuItems(menuPanel)[0]?.focus();
+    }
+    if (opened && typeof headerOptions?.refreshOnOpen === 'function') {
+      void Promise.resolve(headerOptions.refreshOnOpen()).then(() => {
+        if (!menuPanel.classList.contains('add-page-menu--open')) return;
+        const hadFocus = menuPanel.contains(document.activeElement);
+        renderExtraItems();
+        if (hadFocus && !menuPanel.contains(document.activeElement)) {
+          getVisibleActionMenuItems(menuPanel)[0]?.focus();
+        }
+      }).catch(console.error);
+    }
+  });
+}
+
+export function togglePositionedMenuPanel(menuTrigger, menuPanel, onBeforeOpen = null) {
+  document.querySelectorAll('.sidebar__page-menu-panel.add-page-menu--open').forEach(el => {
+    if (el !== menuPanel) {
+      el.classList.remove('add-page-menu--open');
+      el.previousElementSibling?.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.querySelectorAll('.sidebar__location-menu-panel.add-page-menu--open').forEach(el => {
+    el.classList.remove('add-page-menu--open');
+  });
+  const isOpen = menuPanel.classList.contains('add-page-menu--open');
+  if (!isOpen) {
+    onBeforeOpen?.();
+    menuPanel.style.visibility = 'hidden';
+    menuPanel.style.display = 'block';
+    const panelWidth = menuPanel.offsetWidth;
+    menuPanel.style.display = '';
+    menuPanel.style.visibility = '';
+
+    const rect = menuTrigger.getBoundingClientRect();
+    let left = rect.left;
+
+    if (left + panelWidth + 8 > window.innerWidth) {
+      left = rect.right - panelWidth;
+    }
+    if (left < 8) {
+      left = 8;
+    }
+
+    menuPanel.style.left = `${left}px`;
+    menuPanel.style.top = `${rect.bottom + 4}px`;
+    menuPanel.style.bottom = '';
+  } else if (document.activeElement instanceof HTMLElement && menuPanel.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
+  menuPanel.classList.toggle('add-page-menu--open');
+  menuTrigger?.setAttribute('aria-expanded', String(!isOpen));
+  return !isOpen;
+}
+
+export function createPageActionMenu(slug, name, pageType, location, inHeader = false, headerOptions = null) {
   const menuWrapper = document.createElement('div');
   menuWrapper.className = inHeader ? 'page-header__page-menu' : 'sidebar__page-menu';
 
@@ -442,7 +614,7 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
   menuTrigger.type = 'button';
   menuTrigger.className = inHeader ? 'page-header__icon-btn' : 'sidebar__page-menu-trigger';
   menuTrigger.setAttribute('aria-label', `Actions for "${name}"`);
-  menuTrigger.title = 'Page actions';
+  menuTrigger.title = inHeader ? 'Page actions (m)' : 'Page actions';
   if (inHeader) {
     menuTrigger.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">more_horiz</span>';
   } else {
@@ -452,14 +624,37 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
   const menuPanel = document.createElement('div');
   menuPanel.className = 'sidebar__page-menu-panel add-page-menu';
 
-  const closeMenu = () => menuPanel.classList.remove('add-page-menu--open');
+  const closeMenu = () => closeActionMenuPanel(menuTrigger, menuPanel);
 
+  let extraContainer = null;
+  let extraSep = null;
+  const renderExtraItems = () => {
+    if (!extraContainer || typeof headerOptions?.getHeaderItems !== 'function') return;
+    extraContainer.innerHTML = '';
+    const defs = headerOptions.getHeaderItems() ?? [];
+    for (const def of defs) {
+      extraContainer.appendChild(buildActionMenuItem(def, closeMenu));
+    }
+    const hasItems = defs.length > 0;
+    extraContainer.hidden = !hasItems;
+    if (extraSep) extraSep.hidden = !hasItems;
+  };
 
+  if (inHeader && typeof headerOptions?.getHeaderItems === 'function') {
+    extraContainer = document.createElement('div');
+    extraContainer.className = 'page-header__menu-extra';
+    extraSep = document.createElement('hr');
+    extraSep.className = 'add-page-menu__separator';
+    extraSep.setAttribute('aria-hidden', 'true');
+    menuPanel.appendChild(extraContainer);
+    menuPanel.appendChild(extraSep);
+    renderExtraItems();
+  }
 
   const infoItem = document.createElement('button');
   infoItem.type = 'button';
   infoItem.className = 'add-page-menu__item';
-  infoItem.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px; margin-right: 8px;">info</span> Info`;
+  infoItem.innerHTML = `${SVG_INFO} <span>Info</span>`;
   infoItem.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -479,7 +674,7 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
     }
   });
   menuPanel.appendChild(infoItem);
-  
+
   const infoSep = document.createElement('hr');
   infoSep.className = 'add-page-menu__separator';
   infoSep.setAttribute('aria-hidden', 'true');
@@ -491,23 +686,25 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
     setTimeout(() => { btn.innerHTML = originalHTML; }, 1500);
   };
 
+  const copyLinkHTML = `${SVG_LINK} <span>Copy Link</span>`;
   const copyLinkItem = document.createElement('button');
   copyLinkItem.type = 'button';
   copyLinkItem.className = 'add-page-menu__item';
-  copyLinkItem.innerHTML = `${SVG_LINK} Copy Link`;
+  copyLinkItem.innerHTML = copyLinkHTML;
   copyLinkItem.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     closeMenu();
     const url = window.location.origin + buildInternalLinkPath(slug);
     navigator.clipboard.writeText(url).catch(console.error);
-    showCopiedFeedback(copyLinkItem, `${SVG_LINK} Copy Link`);
+    showCopiedFeedback(copyLinkItem, copyLinkHTML);
   });
 
+  const copyMdHTML = `${SVG_LINK} <span>Copy Link as Markdown</span>`;
   const copyMdItem = document.createElement('button');
   copyMdItem.type = 'button';
   copyMdItem.className = 'add-page-menu__item';
-  copyMdItem.innerHTML = `${SVG_LINK} Copy Link as Markdown`;
+  copyMdItem.innerHTML = copyMdHTML;
   copyMdItem.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -516,7 +713,7 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
     const fullName = pageMeta?.page_name ?? pageMeta?.['page-name'] ?? name;
     const md = `[${fullName}](${buildInternalLinkPath(slug)})`;
     navigator.clipboard.writeText(md).catch(console.error);
-    showCopiedFeedback(copyMdItem, `${SVG_LINK} Copy Link as Markdown`);
+    showCopiedFeedback(copyMdItem, copyMdHTML);
   });
 
   const copyGroupSep = document.createElement('hr');
@@ -526,7 +723,7 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
   const deleteItem = document.createElement('button');
   deleteItem.type = 'button';
   deleteItem.className = 'add-page-menu__item add-page-menu__item--danger';
-  deleteItem.innerHTML = `${SVG_TRASH} Delete`;
+  deleteItem.innerHTML = `${SVG_TRASH} <span>Delete</span>`;
   deleteItem.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -537,7 +734,7 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
   const moveItem = document.createElement('button');
   moveItem.type = 'button';
   moveItem.className = 'add-page-menu__item';
-  moveItem.innerHTML = `${SVG_MOVE} Move to \u2026`;
+  moveItem.innerHTML = `${SVG_MOVE} <span>Move to \u2026</span>`;
   moveItem.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -548,14 +745,15 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
   menuPanel.appendChild(copyLinkItem);
   menuPanel.appendChild(copyMdItem);
   menuPanel.appendChild(copyGroupSep);
-  menuPanel.appendChild(deleteItem);
   menuPanel.appendChild(moveItem);
 
   if (pageType === 'note' || pageType === 'whiteboard' || pageType === 'bpmn') {
     const printItem = document.createElement('button');
     printItem.type = 'button';
     printItem.className = 'add-page-menu__item';
-    printItem.innerHTML = `${SVG_PRINT} Print`;
+    printItem.innerHTML = inHeader
+      ? `${SVG_PRINT} <span>Print</span> <span class="menu-shortcut">p</span>`
+      : `${SVG_PRINT} <span>Print</span>`;
     printItem.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -570,42 +768,16 @@ export function createPageActionMenu(slug, name, pageType, location, inHeader = 
     menuPanel.appendChild(printItem);
   }
 
+  const deleteSep = document.createElement('hr');
+  deleteSep.className = 'add-page-menu__separator';
+  deleteSep.setAttribute('aria-hidden', 'true');
+  menuPanel.appendChild(deleteSep);
+  menuPanel.appendChild(deleteItem);
+
   menuWrapper.appendChild(menuTrigger);
   menuWrapper.appendChild(menuPanel);
 
-  menuTrigger.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    document.querySelectorAll('.sidebar__page-menu-panel.add-page-menu--open').forEach(el => {
-      if (el !== menuPanel) el.classList.remove('add-page-menu--open');
-    });
-    document.querySelectorAll('.sidebar__location-menu-panel.add-page-menu--open').forEach(el => {
-      el.classList.remove('add-page-menu--open');
-    });
-    const isOpen = menuPanel.classList.contains('add-page-menu--open');
-    if (!isOpen) {
-      menuPanel.style.visibility = 'hidden';
-      menuPanel.style.display = 'block';
-      const panelWidth = menuPanel.offsetWidth;
-      menuPanel.style.display = '';
-      menuPanel.style.visibility = '';
-
-      const rect = menuTrigger.getBoundingClientRect();
-      let left = rect.left;
-      
-      if (left + panelWidth + 8 > window.innerWidth) {
-        left = rect.right - panelWidth;
-      }
-      if (left < 8) {
-        left = 8;
-      }
-
-      menuPanel.style.left = `${left}px`;
-      menuPanel.style.top = `${rect.bottom + 4}px`;
-      menuPanel.style.bottom = '';
-    }
-    menuPanel.classList.toggle('add-page-menu--open');
-  });
+  wirePageActionMenu(menuTrigger, menuPanel, closeMenu, renderExtraItems, headerOptions);
 
   return menuWrapper;
 }
@@ -1390,36 +1562,38 @@ export function createGridPage(targetLocation = null) {
   unmountBpmn();
   contentEl?.classList.remove('content--whiteboard', 'content--markdown', 'content--bpmn');
 
+  const onTitleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      void save({ focusContent: true });
+    }
+  };
+  const onTitleInput = () => {
+    if (titleEl?.textContent.trim()) {
+      titleEl.classList.remove('content__title--error');
+    }
+  };
+
   if (titleEl) {
     titleEl.textContent = '';
     titleEl.setAttribute('contenteditable', 'plaintext-only');
     titleEl.classList.add('content__title--editing');
-    titleEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') e.preventDefault();
-    });
+    titleEl.addEventListener('keydown', onTitleKeyDown);
+    titleEl.addEventListener('input', onTitleInput);
   }
 
   grid.innerHTML = '';
   if (actionsEl) actionsEl.innerHTML = '';
 
-  const hint = document.createElement('p');
-  hint.className = 'content__empty';
-  hint.textContent = 'Enter a page title, then save to create an empty grid page.';
-  grid.appendChild(hint);
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'btn btn--ghost';
-  cancelBtn.textContent = 'Cancel';
-
-  const saveBtn = document.createElement('button');
-  saveBtn.type = 'button';
-  saveBtn.className = 'btn btn--primary';
-  saveBtn.textContent = 'Save';
+  const { saveBtn, cancelBtn } = createEditorActionButtons(
+    () => { void save(); },
+    () => { void requestCancel(); },
+  );
 
   if (actionsEl) {
-    actionsEl.appendChild(cancelBtn);
     actionsEl.appendChild(saveBtn);
+    actionsEl.appendChild(cancelBtn);
   }
 
   titleEl?.focus();
@@ -1427,6 +1601,8 @@ export function createGridPage(targetLocation = null) {
   const cleanup = () => {
     document.removeEventListener('keydown', onKeyDown, { capture: true });
     if (titleEl) {
+      titleEl.removeEventListener('keydown', onTitleKeyDown);
+      titleEl.removeEventListener('input', onTitleInput);
       titleEl.removeAttribute('contenteditable');
       titleEl.classList.remove('content__title--editing', 'content__title--error');
     }
@@ -1453,7 +1629,9 @@ export function createGridPage(targetLocation = null) {
     }
   };
 
-  const save = async () => {
+  let isSaving = false;
+  const save = async ({ focusContent = false } = {}) => {
+    if (isSaving) return;
     const name = titleEl?.textContent.trim() ?? '';
     if (!name) {
       titleEl?.classList.add('content__title--error');
@@ -1470,30 +1648,37 @@ export function createGridPage(targetLocation = null) {
     if (duplicate) {
       titleEl?.classList.add('content__title--error');
       titleEl?.focus();
+      showErrorBubble(titleEl, 'A page with this name already exists.');
       return;
     }
 
     const newPagePayload = { 'page-name': name, hidden: false, groups: [] };
+    isSaving = true;
     saveBtn.disabled = true;
 
     try {
-        await apiFetch(withLocation('/pages', effectiveLocation), {
-          method: 'POST',
-          body: JSON.stringify(newPagePayload),
-        });
-        await refreshPages();
-
+      await apiFetch(withLocation('/pages', effectiveLocation), {
+        method: 'POST',
+        body: JSON.stringify(newPagePayload),
+      });
+      await refreshPages();
 
       cleanup();
       renderPageList();
       const match = state.pages.find(
         p => p.slug === newSlug && (p.location ?? "") === (effectiveLocation ?? "")
       ) ?? state.pages.find(p => p.slug === newSlug);
-      if (match) await loadPage(match.slug, match.location ?? null);
+      if (match) {
+        await loadPage(match.slug, match.location ?? null);
+        if (focusContent) {
+          document.getElementById('gridAddGroupBtn')?.focus({ preventScroll: true });
+        }
+      }
     } catch {
       titleEl?.classList.add('content__title--error');
       titleEl?.focus();
       saveBtn.disabled = false;
+      isSaving = false;
     }
   };
 
@@ -1509,9 +1694,6 @@ export function createGridPage(targetLocation = null) {
     }
     await cancel();
   };
-
-  cancelBtn.addEventListener('click', () => { void requestCancel(); });
-  saveBtn.addEventListener('click', () => { void save(); });
 
   function onKeyDown(e) {
     if (e.key === 'Escape') {
@@ -1565,17 +1747,26 @@ async function deletePage(slug, name, pageType, location) {
     await apiFetch(apiPath, { method: 'DELETE' });
     await refreshPages();
     renderPageList();
-    // If the deleted page was the active one, clear the content area
-    if (state.currentSlug === slug) {
+    // If the deleted page was the active one, open the first page of the workspace
+    const resolvedLocation = location ?? state.currentLocation ?? null;
+    if (state.currentSlug === slug && (state.currentLocation ?? null) === resolvedLocation) {
       cleanupActiveNoteEditor();
+      if (isEditModeActive()) exitEditMode();
       state.activeGridNote = null;
       setHeaderBreadcrumbs(null);
       state.currentSlug = null;
       state.currentPage = null;
-      document.getElementById('pageGrid').innerHTML = '';
-      document.getElementById('pageTitle').textContent = '';
-      document.getElementById('contentActions').innerHTML = '';
-      updateSidebarVisibility(null);
+      const firstPage = (state.pages ?? []).find(
+        p => !p.hidden && (resolvedLocation ? p.location === resolvedLocation : true)
+      );
+      if (firstPage) {
+        await loadPage(firstPage.slug, firstPage.location ?? null);
+      } else {
+        document.getElementById('pageGrid').innerHTML = '';
+        document.getElementById('pageTitle').textContent = '';
+        document.getElementById('contentActions').innerHTML = '';
+        updateSidebarVisibility(null);
+      }
     }
   } catch (err) {
     console.error('[ExoDeck] Failed to delete page:', err);
@@ -1723,9 +1914,9 @@ export function updatePinButtonUI() {
     sidebarPinBtn.innerHTML = SVG_NAV_CLOSE;
     sidebarPinBtn.classList.remove('nav-header__btn--active');
   }
-  const outlineActionBtn = document.querySelector('.page-header__icon-btn[title="Outline (o)"]');
+  const outlineActionBtn = document.querySelector('[data-action="toggle-outline"]');
   if (outlineActionBtn) {
-    outlineActionBtn.classList.toggle('active', isSidebarPinned);
+    outlineActionBtn.classList.toggle('add-page-menu__item--active', isSidebarPinned);
   }
 }
 
@@ -2416,16 +2607,31 @@ export function initSidebar() {
   function closeHamburgerMenu() {
     hamburgerMenuPanel?.classList.remove('add-page-menu--open');
     hamburgerBtn?.classList.remove('app-header__hamburger-btn--open');
+    hamburgerBtn?.setAttribute('aria-expanded', 'false');
+    if (document.activeElement instanceof HTMLElement && hamburgerMenuPanel?.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
   }
 
   if (hamburgerBtn && hamburgerMenuPanel) {
+    hamburgerBtn.setAttribute('aria-haspopup', 'menu');
+    hamburgerBtn.setAttribute('aria-expanded', 'false');
+    attachActionMenuKeydown(hamburgerMenuPanel, closeHamburgerMenu);
+
     hamburgerBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
 
       const isOpen = hamburgerMenuPanel.classList.contains('add-page-menu--open');
-      document.querySelectorAll('.add-page-menu--open').forEach(el => el.classList.remove('add-page-menu--open'));
+      document.querySelectorAll('.add-page-menu--open').forEach(el => {
+        el.classList.remove('add-page-menu--open');
+        el.previousElementSibling?.setAttribute('aria-expanded', 'false');
+      });
       document.querySelectorAll('.app-header__hamburger-btn--open').forEach(el => el.classList.remove('app-header__hamburger-btn--open'));
+
+      if (isOpen && document.activeElement instanceof HTMLElement && hamburgerMenuPanel.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
 
       if (!isOpen) {
         hamburgerMenuPanel.innerHTML = '';
@@ -2554,6 +2760,10 @@ export function initSidebar() {
         hamburgerMenuPanel.style.bottom = '';
         hamburgerMenuPanel.classList.add('add-page-menu--open');
         hamburgerBtn.classList.add('app-header__hamburger-btn--open');
+        hamburgerBtn.setAttribute('aria-expanded', 'true');
+        if (e.detail === 0) {
+          getVisibleActionMenuItems(hamburgerMenuPanel)[0]?.focus();
+        }
       }
     });
   }
@@ -2608,9 +2818,12 @@ export function initSidebar() {
 
   // Global click & Escape handlers
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.sidebar__page-menu') && !e.target.closest('#hamburgerBtn') && !e.target.closest('#hamburgerMenuPanel') && !e.target.closest('#sidebarMenuBtn') && !e.target.closest('#sidebarMenuPanel')) {
+    if (!e.target.closest('.sidebar__page-menu') && !e.target.closest('.page-header__page-menu') && !e.target.closest('#hamburgerBtn') && !e.target.closest('#hamburgerMenuPanel') && !e.target.closest('#sidebarMenuBtn') && !e.target.closest('#sidebarMenuPanel')) {
       closeHamburgerMenu();
-      document.querySelectorAll('.add-page-menu--open').forEach(el => el.classList.remove('add-page-menu--open'));
+      document.querySelectorAll('.add-page-menu--open').forEach(el => {
+        el.classList.remove('add-page-menu--open');
+        el.previousElementSibling?.setAttribute('aria-expanded', 'false');
+      });
     }
     if (isFloatingNavOpen) {
       if (!e.target.closest('#floatingNavPanel') && !e.target.closest('#pageTitleCrumb') && !e.target.closest('#sidebarUnpinnedStrip') && !e.target.closest('#sidebarOpenBtn') && !e.target.closest('#hamburgerMenuPanel') && !e.target.closest('#hamburgerBtn')) {

@@ -203,11 +203,9 @@ export async function openConfigModal() {
     modal.className = 'modal config-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-labelledby', '_configModalTitle');
+    modal.setAttribute('aria-label', 'Configuration');
 
     modal.innerHTML = `
-    <h2 class="modal__title" id="_configModalTitle">Configuration</h2>
-
     <div class="config-modal__tabs-layout">
       <nav class="config-modal__tab-nav" role="tablist" aria-label="Config sections">
         <button type="button" class="config-modal__tab-btn config-modal__tab-btn--active"
@@ -222,7 +220,7 @@ export async function openConfigModal() {
 
       <div class="config-modal__tab-panels">
         <div class="config-modal__tab-panel" id="_cfg_panel_general" role="tabpanel" aria-labelledby="_cfg_tab_general">
-          <div class="config-modal__section">
+          <div class="config-modal__grid">
             <span class="modal__label">Theme</span>
             <div class="config-modal__theme-row">
               <button type="button" id="_cfg_theme_dark"
@@ -234,9 +232,7 @@ export async function openConfigModal() {
                 ○ Light
               </button>
             </div>
-          </div>
 
-          <div class="config-modal__grid">
             <label class="modal__label" for="_cfg_gw">Max group box width (px)</label>
             <input class="modal__input" id="_cfg_gw" type="number" min="200" max="900" step="10"
               value="${current.groupbox_max_width}" />
@@ -277,10 +273,7 @@ export async function openConfigModal() {
       </div>
     </div>
 
-    <div class="modal__actions">
-      <button type="button" class="btn btn--ghost" id="_cfg_cancel">Cancel</button>
-      <button type="button" class="btn btn--primary" id="_cfg_save">Save</button>
-    </div>
+    ${renderModalSaveCancelActions('_cfg_save', '_cfg_cancel')}
   `;
 
     // --- Tab switching ---
@@ -437,6 +430,7 @@ export async function openConfigModal() {
     }
 
     function openWorkspaceEditModal(loc, index) {
+        const isWindows = (state.goos ?? '').toLowerCase() === 'windows';
         const editOverlay = document.createElement('div');
         editOverlay.className = 'modal-overlay workspace-edit-modal-overlay';
         
@@ -452,10 +446,9 @@ export async function openConfigModal() {
                 <div class="config-modal__path-field">
                     <div class="config-modal__path-row">
                         <input class="modal__input" id="_edit_ws_path" type="text" value="${_esc(loc.path)}" style="flex: 1;" />
-                        <button type="button" class="btn btn--ghost config-modal__browse-btn" id="_edit_ws_browse" title="Browse folders">
+                        ${isWindows ? `<button type="button" class="btn btn--ghost btn--icon config-modal__browse-btn" id="_edit_ws_browse" title="Browse folders" aria-label="Browse folders">
                             <span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">folder</span>
-                            Browse…
-                        </button>
+                        </button>` : ''}
                     </div>
                     <div class="config-modal__path-error" id="_edit_ws_path_error" hidden></div>
                 </div>
@@ -493,10 +486,7 @@ export async function openConfigModal() {
                 <div style="font-size: var(--font-size-sm); color: var(--color-text-muted);">Save the workspace first to upload an icon.</div>
                 `}
             </div>
-            <div class="modal__actions">
-                <button type="button" class="btn btn--ghost" id="_edit_ws_cancel">Cancel</button>
-                <button type="button" class="btn btn--primary" id="_edit_ws_save">Save</button>
-            </div>
+            ${renderModalSaveCancelActions('_edit_ws_save', '_edit_ws_cancel')}
         `;
 
         const onEditEscape = (e) => {
@@ -755,6 +745,18 @@ export async function openConfigModal() {
     });
 
     modal.querySelector('#_cfg_cancel').focus();
+}
+
+function renderModalSaveCancelActions(saveId, cancelId) {
+    return `
+    <div class="modal__actions">
+      <button type="button" class="page-header__icon-btn" id="${saveId}" title="Save" aria-label="Save">
+        <span class="material-symbols-outlined" style="font-size: 20px; color: #4caf50;" aria-hidden="true">check</span>
+      </button>
+      <button type="button" class="page-header__icon-btn" id="${cancelId}" title="Cancel (Esc)" aria-label="Cancel">
+        <span class="material-symbols-outlined" style="font-size: 20px; color: #f44336;" aria-hidden="true">close</span>
+      </button>
+    </div>`;
 }
 
 function _esc(str) {

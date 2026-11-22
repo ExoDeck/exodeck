@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"vault_status": vaultStatusByLocation,
 		"due_tasks":    s.Store.GetDueTasks(),
 		"all_tasks":    s.Store.GetAllTasks(),
+		"goos":         runtime.GOOS,
 	})
 }
 

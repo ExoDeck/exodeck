@@ -333,6 +333,7 @@ export function createEditorActionButtons(onSave, onCancel) {
   saveBtn.type = 'button';
   saveBtn.className = 'page-header__icon-btn';
   saveBtn.title = 'Save (Ctrl+S)';
+  saveBtn.setAttribute('aria-label', 'Save');
   saveBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px; color: #4caf50;">check</span>';
   saveBtn.addEventListener('click', onSave);
 
@@ -340,6 +341,7 @@ export function createEditorActionButtons(onSave, onCancel) {
   cancelBtn.type = 'button';
   cancelBtn.className = 'page-header__icon-btn';
   cancelBtn.title = 'Cancel (Esc)';
+  cancelBtn.setAttribute('aria-label', 'Cancel');
   cancelBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px; color: #f44336;">close</span>';
   cancelBtn.addEventListener('click', onCancel);
 

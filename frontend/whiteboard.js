@@ -1,6 +1,6 @@
 // whiteboard.js — Whiteboard page type using Excalidraw (lazy-loaded from CDN)
 import { state, withLocation, refreshPages, isHelpWorkspace, showStyledConfirmModal } from './app.js';
-import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs } from './sidebar.js';
+import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs, buildPagePath } from './sidebar.js';
 import { cleanupActiveNoteEditor } from './note.js';
 import { showErrorBubble, parseApiError, createEditorActionButtons, handleTabNavigation, navigateAfterPageCancel, validateNewPageTitle } from './ui-utils.js';
 import { openConfirmModal } from './modal.js';
@@ -237,21 +237,22 @@ async function renderWhiteboardView(page, slug, location, cachedDeps = null, cac
   const { React, ReactDOM, Excalidraw } = deps;
   mountExcalidraw(React, ReactDOM, Excalidraw, container, buildInitialData(page, libraryItems), { viewMode: true });
 
-  // Edit button
-  if (actionsEl) {
+  // Page menu (contains Edit in view mode)
+  if (actionsEl && !isHelpWorkspace(location)) {
     actionsEl.innerHTML = '';
-    const editBtn = document.createElement('button');
-    editBtn.id = 'editWbPageBtn';
-    editBtn.type = 'button';
-    editBtn.className = 'page-header__icon-btn';
-    editBtn.title = 'Edit (e)';
-    editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
-    editBtn.addEventListener('click', () => enterEditMode(page, slug, location, deps, libraryItems));
-    if (!isHelpWorkspace(location)) {
-      const menuBtn = createPageActionMenu(slug, page['page-name'], 'whiteboard', location, true);
-      actionsEl.appendChild(editBtn);
-      actionsEl.appendChild(menuBtn);
-    }
+    const menuBtn = createPageActionMenu(slug, page['page-name'], 'whiteboard', location, true, {
+      getHeaderItems: () => [
+        {
+          id: 'editWbPageBtn',
+          icon: 'edit',
+          label: 'Edit',
+          shortcut: 'e',
+          title: 'Edit (e)',
+          onClick: () => enterEditMode(page, slug, location, deps, libraryItems),
+        },
+      ],
+    });
+    actionsEl.appendChild(menuBtn);
   }
 }
 
@@ -259,7 +260,7 @@ async function renderWhiteboardView(page, slug, location, cachedDeps = null, cac
  * Switch to interactive edit mode: make title editable, enable drawing,
  * show Save / Cancel.
  */
-async function enterEditMode(page, slug, location, deps, libraryItems) {
+async function enterEditMode(page, slug, location, deps, libraryItems, { focusContent = false } = {}) {
   const titleEl   = document.getElementById('pageTitle');
   const actionsEl = document.getElementById('contentActions');
   const grid      = document.getElementById('pageGrid');
@@ -277,18 +278,24 @@ async function enterEditMode(page, slug, location, deps, libraryItems) {
     files:    sceneData?.files ?? null,
   };
 
+  const onTitleKeyDown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
+
   // Make title editable
   if (titleEl) {
     titleEl.setAttribute('contenteditable', 'plaintext-only');
     titleEl.classList.add('content__title--editing');
-    titleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
-    titleEl.focus();
-    const range = document.createRange();
-    range.selectNodeContents(titleEl);
-    range.collapse(false);
-    const sel = globalThis.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    titleEl.addEventListener('keydown', onTitleKeyDown);
+    if (!focusContent) {
+      titleEl.focus();
+      const range = document.createRange();
+      range.selectNodeContents(titleEl);
+      range.collapse(false);
+      const sel = globalThis.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      titleEl.blur();
+    }
   }
 
   // Unmount view-mode instance before clearing DOM.
@@ -298,6 +305,7 @@ async function enterEditMode(page, slug, location, deps, libraryItems) {
   const container = document.createElement('div');
   container.className = 'whiteboard-container';
   container.id = 'wbEditorContainer';
+  container.tabIndex = 0;
   grid.appendChild(container);
 
   const { React, ReactDOM, Excalidraw } = deps;
@@ -306,6 +314,10 @@ async function enterEditMode(page, slug, location, deps, libraryItems) {
     onChange: (elements, appState, files) => { pendingScene = { elements, appState, files }; },
   });
 
+  if (focusContent) {
+    requestAnimationFrame(() => container.focus({ preventScroll: true }));
+  }
+
   // Save / Cancel toolbar
   if (actionsEl) {
     actionsEl.innerHTML = '';
@@ -313,6 +325,7 @@ async function enterEditMode(page, slug, location, deps, libraryItems) {
     const cancel = () => {
       document.removeEventListener('keydown', onKeyDown, { capture: true });
       if (titleEl) {
+        titleEl.removeEventListener('keydown', onTitleKeyDown);
         titleEl.removeAttribute('contenteditable');
         titleEl.classList.remove('content__title--editing', 'content__title--error');
       }
@@ -373,6 +386,7 @@ async function enterEditMode(page, slug, location, deps, libraryItems) {
         };
 
         if (titleEl) {
+          titleEl.removeEventListener('keydown', onTitleKeyDown);
           titleEl.removeAttribute('contenteditable');
           titleEl.classList.remove('content__title--editing');
         }
@@ -468,12 +482,26 @@ export function createWhiteboardPage(targetLocation = null) {
   contentEl?.classList.remove('content--markdown');
   contentEl?.classList.add('content--whiteboard');
 
+  const onTitleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      void save({ stayInEditMode: true });
+    }
+  };
+  const onTitleInput = () => {
+    if (titleEl?.textContent.trim()) {
+      titleEl.classList.remove('content__title--error');
+    }
+  };
+
   // Empty editable title
   if (titleEl) {
     titleEl.textContent = '';
     titleEl.setAttribute('contenteditable', 'plaintext-only');
     titleEl.classList.add('content__title--editing');
-    titleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+    titleEl.addEventListener('keydown', onTitleKeyDown);
+    titleEl.addEventListener('input', onTitleInput);
   }
 
   // Unmount any previous whiteboard and clear the area
@@ -490,27 +518,25 @@ export function createWhiteboardPage(targetLocation = null) {
 
   // Track the pending scene (starts empty)
   let pendingScene = { elements: [], appState: {}, files: null };
+  let disposed = false;
+  let loadedDeps = null;
+  let loadedLibItems = null;
 
   // Save / Cancel toolbar — shown immediately so Cancel works during load
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'btn btn--ghost';
-  cancelBtn.textContent = 'Cancel';
-
-  const saveBtn = document.createElement('button');
-  saveBtn.type = 'button';
-  saveBtn.className = 'btn btn--primary';
-  saveBtn.textContent = 'Save';
+  const { saveBtn, cancelBtn } = createEditorActionButtons(
+    () => { void save(); },
+    () => { void requestCancel(); },
+  );
 
   if (actionsEl) {
-    actionsEl.appendChild(cancelBtn);
     actionsEl.appendChild(saveBtn);
+    actionsEl.appendChild(cancelBtn);
   }
 
   const getContentFocusElement = () => document.getElementById('wbNewContainer') ?? loader;
 
   const handleCreateTabOrder = (e) => {
-    handleTabNavigation(e, [titleEl, getContentFocusElement(), cancelBtn, saveBtn]);
+    handleTabNavigation(e, [titleEl, getContentFocusElement(), saveBtn, cancelBtn]);
   };
 
   titleEl?.addEventListener('keydown', handleCreateTabOrder);
@@ -522,7 +548,10 @@ export function createWhiteboardPage(targetLocation = null) {
   titleEl?.focus();
 
   const cleanup = () => {
+    disposed = true;
     document.removeEventListener('keydown', onKeyDown, { capture: true });
+    titleEl?.removeEventListener('keydown', onTitleKeyDown);
+    titleEl?.removeEventListener('input', onTitleInput);
     titleEl?.removeEventListener('keydown', handleCreateTabOrder);
     loader.removeEventListener('keydown', handleCreateTabOrder);
     cancelBtn.removeEventListener('keydown', handleCreateTabOrder);
@@ -542,15 +571,19 @@ export function createWhiteboardPage(targetLocation = null) {
     await navigateAfterPageCancel(targetLocation, state, loadPage, updateSidebarVisibility);
   };
 
-  const save = async () => {
+  let isSaving = false;
+  const save = async ({ stayInEditMode = false } = {}) => {
+    if (isSaving) return;
     const { valid, title: newName, slug: newSlug } = validateNewPageTitle(titleEl, effectiveLocation, state, slugify);
     if (!valid) return;
 
+    const sceneSnapshot = { elements: pendingScene.elements, appState: pendingScene.appState, files: pendingScene.files };
     const payload = JSON.stringify({
       'page-name': newName,
-      excalidraw: { elements: pendingScene.elements, appState: pendingScene.appState, files: pendingScene.files },
+      excalidraw: sceneSnapshot,
     });
 
+    isSaving = true;
     saveBtn.disabled = true;
     try {
       const path = withLocation('/whiteboards', effectiveLocation);
@@ -566,6 +599,7 @@ export function createWhiteboardPage(targetLocation = null) {
           titleEl?.focus();
           showErrorBubble(titleEl, 'A page with this name already exists.');
           saveBtn.disabled = false;
+          isSaving = false;
           return;
         }
         throw new Error(parseApiError(msg, 'Failed to create whiteboard.'));
@@ -573,16 +607,34 @@ export function createWhiteboardPage(targetLocation = null) {
       await refreshPages();
 
       cleanup();
-      // Dynamically import loadPage to avoid circular deps at module init time
-      const { loadPage } = await import('./sidebar.js');
-      renderPageList();
-      const match = state.pages.find(
-        p => p.slug === newSlug && (p.location ?? '') === (effectiveLocation ?? '')
-      ) ?? state.pages.find(p => p.slug === newSlug);
-      if (match) await loadPage(match.slug, match.location ?? null);
+      if (stayInEditMode) {
+        const updatedPage = {
+          'page-name': newName,
+          page_type: 'whiteboard',
+          wbData: { 'page-name': newName, excalidraw: sceneSnapshot },
+        };
+        state.currentSlug = newSlug;
+        state.currentLocation = effectiveLocation;
+        state.currentPage = updatedPage;
+        history.pushState({ slug: newSlug, location: effectiveLocation }, '', buildPagePath(newSlug, effectiveLocation));
+        renderPageList();
+        const [deps, libraryItems] = (loadedDeps && loadedLibItems)
+          ? [loadedDeps, loadedLibItems]
+          : await Promise.all([loadWhiteboardDeps(), loadLibraryItems()]);
+        await enterEditMode(updatedPage, newSlug, effectiveLocation, deps, libraryItems, { focusContent: true });
+      } else {
+        // Dynamically import loadPage to avoid circular deps at module init time
+        const { loadPage } = await import('./sidebar.js');
+        renderPageList();
+        const match = state.pages.find(
+          p => p.slug === newSlug && (p.location ?? '') === (effectiveLocation ?? '')
+        ) ?? state.pages.find(p => p.slug === newSlug);
+        if (match) await loadPage(match.slug, match.location ?? null);
+      }
     } catch (err) {
       showErrorBubble(titleEl, `Save failed: ${err.message}`);
       saveBtn.disabled = false;
+      isSaving = false;
     }
   };
 
@@ -595,9 +647,6 @@ export function createWhiteboardPage(targetLocation = null) {
     }
     await cancel();
   };
-
-  cancelBtn.addEventListener('click', () => { void requestCancel(); });
-  saveBtn.addEventListener('click', () => { void save(); });
 
   function onKeyDown(e) {
     if (document.getElementById('_confirmModalOverlay')) return;
@@ -625,6 +674,9 @@ export function createWhiteboardPage(targetLocation = null) {
   // Load Excalidraw deps and mount in interactive (edit) mode
   Promise.all([loadWhiteboardDeps(), loadLibraryItems()])
     .then(([deps, libraryItems]) => {
+      if (disposed) return;
+      loadedDeps = deps;
+      loadedLibItems = libraryItems;
       loader.remove();
       const container = document.createElement('div');
       container.className = 'whiteboard-container';

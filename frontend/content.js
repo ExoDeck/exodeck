@@ -8,8 +8,10 @@ import { renderBpmnPage, unmountBpmn } from './bpmn.js';
 import { isEditModeActive, enterEditMode, exitEditMode, reAttachIfActive } from './reorganize.js';
 import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs } from './sidebar.js';
 import { openConfirmModal } from './modal.js';
+import { fetchVaultStatus, getVaultMenuAction } from './vault.js';
 
 let editEscListener = null;
+let titleEditEnterListener = null;
 
 function detachEditEscListener() {
   if (editEscListener) {
@@ -18,15 +20,41 @@ function detachEditEscListener() {
   }
 }
 
+function detachTitleEditEnterListener() {
+  const titleEl2 = document.getElementById('pageTitle');
+  if (titleEl2 && titleEditEnterListener) {
+    titleEl2.removeEventListener('keydown', titleEditEnterListener);
+  }
+  titleEditEnterListener = null;
+}
+
 // ---------------------------------------------------------------------------
 // Add Group modal
 // ---------------------------------------------------------------------------
+
+function clearGridFocus(grid) {
+  grid.querySelectorAll('.group-card--focused').forEach(c => c.classList.remove('group-card--focused'));
+  grid.querySelectorAll('.item--focused').forEach(i => i.classList.remove('item--focused'));
+}
+
+export function focusGridGroupCard(groupIndex) {
+  const grid = document.getElementById('pageGrid');
+  if (!grid || groupIndex == null) return;
+  clearGridFocus(grid);
+  const target = Array.from(grid.querySelectorAll('.group-card'))
+    .find(c => c.dataset.groupIndex === String(groupIndex));
+  if (!target) return;
+  target.classList.add('group-card--focused');
+  target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
 
 export function startInlineGroupCreation(groupType = 'group') {
   if (isHelpWorkspace(state.currentLocation)) return;
   const grid = document.getElementById('pageGrid');
   if (!grid) return;
   const addControl = document.getElementById('gridAddGroup');
+
+  clearGridFocus(grid);
 
   if (groupType === 'sticky') {
     const { card, focusTarget } = createNewStickyNoteCard(state.currentSlug, state.currentLocation);
@@ -78,18 +106,16 @@ export function startInlineGroupCreation(groupType = 'group') {
     const newGroup = { title: name, items: [] };
 
     try {
-      await apiFetch(withLocation(`/pages/${slug}/groups`), {
+      const res = await apiFetch(withLocation(`/pages/${slug}/groups`), {
         method: 'POST',
         body: JSON.stringify(newGroup),
       });
       const updated = await apiFetch(withLocation(`/pages/${slug}`));
       state.currentPage = updated;
 
-      if (updated.groups && updated.groups.length > 0) {
-        card.dataset.groupIndex = String(updated.groups.length - 1);
-      }
-
+      const newIndex = res?.group_index ?? (updated.groups?.length ? updated.groups.length - 1 : null);
       renderPage(state.currentPage);
+      focusGridGroupCard(newIndex);
     } catch (err) {
       console.error(err);
       renderPage(state.currentPage);
@@ -193,9 +219,11 @@ function enterEditUI(editBtn) {
     sel.removeAllRanges();
     sel.addRange(range);
     titleEl2.focus();
-    titleEl2.addEventListener('keydown', (e) => {
+    detachTitleEditEnterListener();
+    titleEditEnterListener = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); editBtn.click(); }
-    }, { once: true });
+    };
+    titleEl2.addEventListener('keydown', titleEditEnterListener);
   }
 
   const groupCards = document.querySelectorAll('.group-card:not(.group-card--add)');
@@ -220,61 +248,40 @@ function sortPageGroupsAlphabetically(page) {
   }
 }
 
-const SVG_SORT_ALPHA = `<span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">sort_by_alpha</span>`;
+async function toggleCustomSort() {
+  const willBeCustom = !(state.currentPage?.custom_sort ?? false);
 
-const SVG_SORT_CUSTOM = `<span class="material-symbols-outlined" style="font-size: 18px;" aria-hidden="true">view_list</span>`;
+  if (!willBeCustom) {
+    const { showStyledConfirmModal } = await import('./app.js');
+    const confirmed = await showStyledConfirmModal('Disable Custom Sort?', 'Are you sure you want to turn off custom sort? Your custom order will be lost when you reorganize or edit items.');
+    if (!confirmed) return;
+  }
 
-function createSortButton(page) {
-  const isCustomSort = page.custom_sort ?? false;
-  
-  const sortBtn = document.createElement('button');
-  sortBtn.type = 'button';
-  sortBtn.className = 'page-header__icon-btn';
-  sortBtn.title = isCustomSort ? 'Custom sort is ON (click to disable)' : 'Custom sort is OFF (click to enable)';
-  sortBtn.innerHTML = isCustomSort ? SVG_SORT_CUSTOM : SVG_SORT_ALPHA;
-  
-  sortBtn.addEventListener('click', async () => {
-    const willBeCustom = !(state.currentPage.custom_sort ?? false);
-    
-    if (!willBeCustom) {
-      const { showStyledConfirmModal } = await import('./app.js');
-      const confirmed = await showStyledConfirmModal('Disable Custom Sort?', 'Are you sure you want to turn off custom sort? Your custom order will be lost when you reorganize or edit items.');
-      if (!confirmed) return;
+  try {
+    const slug = state.currentSlug;
+    const location = state.currentLocation;
+    const fullPage = await apiFetch(withLocation(`/pages/${encodeURIComponent(slug)}`, location));
+
+    if (willBeCustom) {
+      sortPageGroupsAlphabetically(fullPage);
     }
 
-    sortBtn.innerHTML = willBeCustom ? SVG_SORT_CUSTOM : SVG_SORT_ALPHA;
-    sortBtn.title = willBeCustom ? 'Custom sort is ON (click to disable)' : 'Custom sort is OFF (click to enable)';
-    
-    try {
-      const slug = state.currentSlug;
-      const location = state.currentLocation;
-      const fullPage = await apiFetch(withLocation(`/pages/${encodeURIComponent(slug)}`, location));
-      
-      if (willBeCustom) {
-        sortPageGroupsAlphabetically(fullPage);
-      }
-      
-      fullPage.custom_sort = willBeCustom;
-      
-      await apiFetch(withLocation(`/pages/${encodeURIComponent(slug)}`, location), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fullPage),
-      });
-      
-      const pageMeta = state.pages.find(p => p.slug === slug && (location ? p.location === location : true));
-      if (pageMeta) pageMeta.custom_sort = willBeCustom;
-      
-      state.currentPage = fullPage;
-      renderPage(state.currentPage);
-    } catch (err) {
-      console.error('Failed to toggle sort:', err);
-      sortBtn.innerHTML = !willBeCustom ? SVG_SORT_CUSTOM : SVG_SORT_ALPHA;
-      sortBtn.title = !willBeCustom ? 'Custom sort is ON (click to disable)' : 'Custom sort is OFF (click to enable)';
-    }
-  });
+    fullPage.custom_sort = willBeCustom;
 
-  return sortBtn;
+    await apiFetch(withLocation(`/pages/${encodeURIComponent(slug)}`, location), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fullPage),
+    });
+
+    const pageMeta = state.pages.find(p => p.slug === slug && (location ? p.location === location : true));
+    if (pageMeta) pageMeta.custom_sort = willBeCustom;
+
+    state.currentPage = fullPage;
+    renderPage(state.currentPage);
+  } catch (err) {
+    console.error('Failed to toggle sort:', err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -284,23 +291,26 @@ function createSortButton(page) {
 function setupPageActions(page) {
   const actionsEl = document.getElementById('contentActions');
   if (!actionsEl) return;
-  
+
   actionsEl.innerHTML = '';
-  const editBtn = document.createElement('button');
-  editBtn.id = 'editPageBtn';
-  editBtn.type = 'button';
-  editBtn.className = 'page-header__icon-btn';
-  editBtn.title = isEditModeActive() ? 'Save (Ctrl+S)' : 'Edit (e)';
-  editBtn.innerHTML = isEditModeActive() 
-    ? '<span class="material-symbols-outlined" style="font-size: 20px; color: #4caf50;">check</span>' 
-    : '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
+  if (isHelpWorkspace(state.currentLocation)) {
+    detachEditEscListener();
+    return;
+  }
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'page-header__icon-btn';
+  saveBtn.title = 'Save (Ctrl+S)';
+  saveBtn.setAttribute('aria-label', 'Save changes');
+  saveBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px; color: #4caf50;">check</span>';
 
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'page-header__icon-btn';
   cancelBtn.title = 'Cancel (Esc)';
+  cancelBtn.setAttribute('aria-label', 'Cancel editing');
   cancelBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px; color: #f44336;">close</span>';
-  cancelBtn.style.display = isEditModeActive() ? 'inline-block' : 'none';
 
   const isGridEditDirty = () => {
     const titleEl2 = document.getElementById('pageTitle');
@@ -332,6 +342,7 @@ function setupPageActions(page) {
       }
       exitEditMode();
       detachEditEscListener();
+      detachTitleEditEnterListener();
       const titleEl2 = document.getElementById('pageTitle');
       if (titleEl2) {
         titleEl2.removeAttribute('contenteditable');
@@ -342,8 +353,6 @@ function setupPageActions(page) {
       isCancelling = false;
     }
   };
-
-  cancelBtn.addEventListener('click', () => { void cancelEdit(); });
 
   const onEditEscape = (e) => {
     if (!isEditModeActive() || e.key !== 'Escape') return;
@@ -363,38 +372,79 @@ function setupPageActions(page) {
     document.addEventListener('keydown', editEscListener);
   };
 
+  const startEdit = () => {
+    enterEditMode();
+    renderActionBar();
+    enterEditUI(saveBtn);
+    attachEditEscListener();
+  };
+
+  const renderActionBar = () => {
+    actionsEl.innerHTML = '';
+    const editing = isEditModeActive();
+    saveBtn.id = editing ? 'editPageBtn' : '';
+
+    const menuBtn = createPageActionMenu(state.currentSlug, page['page-name'], undefined, state.currentLocation, true, {
+      getHeaderItems: () => {
+        const items = [];
+        if (!isEditModeActive()) {
+          items.push({
+            id: 'editPageBtn',
+            icon: 'edit',
+            label: 'Edit',
+            shortcut: 'e',
+            title: 'Edit (e)',
+            onClick: () => startEdit(),
+          });
+        }
+        const isCustomSort = state.currentPage?.custom_sort ?? false;
+        items.push({
+          icon: isCustomSort ? 'view_list' : 'sort_by_alpha',
+          label: isCustomSort ? 'Custom Sort: On' : 'Custom Sort: Off',
+          title: isCustomSort ? 'Custom sort is ON (click to disable)' : 'Custom sort is OFF (click to enable)',
+          onClick: () => { void toggleCustomSort(); },
+        });
+        const vaultAction = getVaultMenuAction(state.currentLocation);
+        if (vaultAction) {
+          items.push({
+            icon: vaultAction.icon,
+            iconColor: vaultAction.iconColor,
+            label: vaultAction.label,
+            title: vaultAction.title,
+            onClick: vaultAction.onClick,
+          });
+        }
+        return items;
+      },
+      refreshOnOpen: () => fetchVaultStatus(state.currentLocation),
+    });
+
+    if (editing) {
+      actionsEl.appendChild(saveBtn);
+      actionsEl.appendChild(cancelBtn);
+    }
+    actionsEl.appendChild(menuBtn);
+  };
+
+  cancelBtn.addEventListener('click', () => { void cancelEdit(); });
+
+  saveBtn.addEventListener('click', async () => {
+    if (!isEditModeActive()) return;
+    detachTitleEditEnterListener();
+    await saveTitleAndGroups(page);
+    page = state.currentPage;
+    exitEditMode();
+    detachEditEscListener();
+    renderActionBar();
+  });
+
   detachEditEscListener();
+  detachTitleEditEnterListener();
   if (isEditModeActive()) {
     attachEditEscListener();
   }
 
-  editBtn.addEventListener('click', async () => {
-    if (isEditModeActive()) {
-      await saveTitleAndGroups(page);
-      page = state.currentPage; // Update local reference after save
-      exitEditMode();
-      detachEditEscListener();
-      cancelBtn.style.display = 'none';
-    } else {
-      enterEditMode();
-      enterEditUI(editBtn);
-      attachEditEscListener();
-      cancelBtn.style.display = 'inline-flex';
-    }
-    editBtn.title = isEditModeActive() ? 'Save (Ctrl+S)' : 'Edit (e)';
-    editBtn.innerHTML = isEditModeActive() 
-      ? '<span class="material-symbols-outlined" style="font-size: 20px; color: #4caf50;">check</span>' 
-      : '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
-  });
-
-  if (!isHelpWorkspace(state.currentLocation)) {
-    const sortBtn = createSortButton(state.currentPage);
-    const menuBtn = createPageActionMenu(state.currentSlug, page['page-name'], undefined, state.currentLocation, true);
-    actionsEl.appendChild(editBtn);
-    actionsEl.appendChild(cancelBtn);
-    actionsEl.appendChild(sortBtn);
-    actionsEl.appendChild(menuBtn);
-  }
+  renderActionBar();
 }
 
 function createAddGroupControl() {
@@ -422,6 +472,7 @@ function createAddGroupControl() {
     { action: 'add-sticky', label: 'Add Sticky Note', icon: 'sticky_note' },
   ];
 
+  const menuButtons = [];
   for (const opt of options) {
     const li = document.createElement('li');
     const btn = document.createElement('button');
@@ -431,29 +482,73 @@ function createAddGroupControl() {
     btn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px; margin-right: 6px; vertical-align: bottom;" aria-hidden="true">${opt.icon}</span>${opt.label}`;
     li.appendChild(btn);
     menu.appendChild(li);
+    menuButtons.push(btn);
   }
+
+  let focusedIdx = 0;
+  const focusMenuItem = (idx) => {
+    if (menuButtons.length === 0) return;
+    focusedIdx = ((idx % menuButtons.length) + menuButtons.length) % menuButtons.length;
+    menuButtons[focusedIdx].focus();
+  };
 
   const closeMenu = () => {
     menu.hidden = true;
     addBtn.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', onOutsideClick);
-    document.removeEventListener('keydown', onEscape);
+    document.removeEventListener('keydown', onMenuKeyDown, true);
   };
 
   function onOutsideClick(e) {
-    if (!wrap.contains(e.target)) {
+    if (!wrap.isConnected || !wrap.contains(e.target)) {
       closeMenu();
     }
   }
 
-  function onEscape(e) {
+  function onMenuKeyDown(e) {
+    if (!wrap.isConnected) {
+      closeMenu();
+      return;
+    }
+    if (menu.hidden) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
       closeMenu();
       addBtn.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      focusMenuItem(menuButtons.includes(document.activeElement) ? focusedIdx + 1 : 0);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      focusMenuItem(menuButtons.includes(document.activeElement) ? focusedIdx - 1 : menuButtons.length - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      e.stopPropagation();
+      focusMenuItem(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      e.stopPropagation();
+      focusMenuItem(menuButtons.length - 1);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      if (menuButtons.includes(document.activeElement)) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.activeElement.click();
+      }
+    } else if (e.key === 'Tab') {
+      closeMenu();
     }
   }
+
+  menuButtons.forEach((btn, i) => {
+    btn.addEventListener('mouseenter', () => {
+      focusedIdx = i;
+      btn.focus();
+    });
+  });
 
   addBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -463,9 +558,10 @@ function createAddGroupControl() {
     }
     menu.hidden = false;
     addBtn.setAttribute('aria-expanded', 'true');
+    focusMenuItem(0);
     setTimeout(() => {
       document.addEventListener('click', onOutsideClick);
-      document.addEventListener('keydown', onEscape);
+      document.addEventListener('keydown', onMenuKeyDown, true);
     }, 0);
   });
 
@@ -483,13 +579,7 @@ function createAddGroupControl() {
 }
 
 function renderGroupCards(grid, groups) {
-  if (groups.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'content__empty';
-    empty.textContent = 'No groups yet. Add one to get started.';
-    grid.appendChild(empty);
-    return;
-  }
+  if (groups.length === 0) return;
 
   let sorted = groups.map((group, originalIndex) => ({ group, originalIndex }));
   if (!state.currentPage.custom_sort) {
