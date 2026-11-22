@@ -172,6 +172,9 @@ func TestBootstrapReturnsLocationsAndPages(t *testing.T) {
 	if body["vault_status"] == nil {
 		t.Error("expected vault_status in bootstrap response")
 	}
+	if goos, ok := body["goos"].(string); !ok || goos == "" {
+		t.Errorf("expected non-empty goos string in bootstrap response, got %v", body["goos"])
+	}
 }
 
 // --------------------------------------------------------------------------

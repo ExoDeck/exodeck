@@ -445,12 +445,16 @@ function handleSKeydown(e) {
 function handleEKeydown(e) {
   if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target) && !isOverlayActive()) {
     e.preventDefault();
-    if (!document.getElementById('mdEditorContainer') && !document.getElementById('wbEditorContainer') && !document.getElementById('bpmnEditorContainer')) {
+    const isEditing =
+      document.getElementById('mdEditorContainer') ||
+      document.getElementById('wbEditorContainer') ||
+      document.getElementById('bpmnEditorContainer') ||
+      document.getElementById('pageGrid')?.classList.contains('content__grid--edit-mode');
+    if (!isEditing) {
       const editBtn = document.getElementById('editMdPageBtn')
         ?? document.getElementById('editWbPageBtn')
         ?? document.getElementById('editBpmnPageBtn')
-        ?? document.getElementById('editPageBtn')
-        ?? document.querySelector('#contentActions .btn--ghost');
+        ?? document.getElementById('editPageBtn');
       editBtn?.click();
     }
   }
@@ -462,7 +466,7 @@ function handleCtrlSKeydown(e) {
   if (document.getElementById('mdEditorContainer') || document.getElementById('wbEditorContainer') || document.getElementById('bpmnEditorContainer')) return;
   // Grid edit mode: clicking Save exits and saves
   if (document.getElementById('pageGrid')?.classList.contains('content__grid--edit-mode')) {
-    const editBtn = document.getElementById('editPageBtn') ?? document.querySelector('#contentActions .btn--ghost');
+    const editBtn = document.getElementById('editPageBtn');
     editBtn?.click();
   }
 }
@@ -552,8 +556,25 @@ function handleTKeydown(e) {
   }
 }
 
+function triggerHeaderMenuShortcut(e, selector) {
+  if (
+    e.ctrlKey || e.altKey || e.metaKey ||
+    isTypingContext(e.target) || isOverlayActive() ||
+    document.body.classList.contains('mermaid-viewer-open')
+  ) {
+    return;
+  }
+  const trigger = /** @type {HTMLButtonElement|null} */ (document.querySelector(selector));
+  if (!trigger) return;
+  e.preventDefault();
+  trigger.click();
+}
+
 function isGridNavigable(e) {
   if (!isActiveGridPage()) {
+    return false;
+  }
+  if (e.target instanceof Element && e.target.closest('#gridAddGroup')) {
     return false;
   }
   return !isTypingContext(e.target) && !isOverlayActive() && !document.querySelector('.group-card__menu:not([hidden])');
@@ -716,6 +737,8 @@ const keyHandlers = {
   'N': handleNKeydown,
   't': handleTKeydown,
   'T': handleTKeydown,
+  'm': (e) => triggerHeaderMenuShortcut(e, '#contentActions .page-header__page-menu .page-header__icon-btn'),
+  '-': (e) => triggerHeaderMenuShortcut(e, '#hamburgerBtn'),
 };
 
 const GRID_NAV_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' ', 'Delete']);

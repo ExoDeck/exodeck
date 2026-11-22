@@ -62,6 +62,9 @@ export const state = {
 
   /** Vault status by location name, populated by bootstrap or vault.js { [location]: {configured, unlocked, has_legacy_key, expires_in_seconds} } */
   vaultStatus: {},
+
+  /** Backend runtime.GOOS (e.g. 'windows', 'linux', 'darwin') */
+  goos: '',
 };
 
 /**
@@ -181,6 +184,9 @@ export function showStyledConfirmModal(title, message) {
 export async function refreshPages() {
   const data = await apiFetch('/bootstrap');
   state.locations = data.locations;
+  if (typeof data.goos === 'string') {
+    state.goos = data.goos;
+  }
   if (data.vault_status) {
     state.vaultStatus = data.vault_status;
   }

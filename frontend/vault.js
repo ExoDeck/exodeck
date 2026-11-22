@@ -496,53 +496,63 @@ export function isGridPage() {
 }
 
 /**
- * Update the vault lock/unlock status badge in the header/navigation.
+ * Build a menu item descriptor for the current workspace vault state on Grid pages.
+ * @param {string|null} location
+ * @returns {{ icon: string, iconColor: string, label: string, title: string, onClick: () => void|Promise<void> }|null}
+ */
+export function getVaultMenuAction(location = null) {
+  const ws = location || state.currentLocation || '';
+  if (!ws || isHelpWorkspace(ws) || !isGridPage()) return null;
+
+  const status = state.vaultStatus?.[ws];
+  if (!status) return null;
+
+  if (!status.configured) {
+    if (!status.has_legacy_key) return null;
+    return {
+      icon: 'warning',
+      iconColor: 'var(--color-warning)',
+      label: 'Legacy Key',
+      title: 'Legacy Fernet Key in use. Click to upgrade to Master Password vault.',
+      onClick: () => openVaultMigrateModal(ws, () => { void updateVaultBadge(); }),
+    };
+  }
+
+  if (status.unlocked) {
+    const mins = Math.max(1, Math.round((status.expires_in_seconds ?? 0) / 60));
+    return {
+      icon: 'lock_open',
+      iconColor: 'var(--color-accent)',
+      label: `Lock Vault (${mins}m)`,
+      title: `Vault unlocked (~${mins}m idle remaining). Click to lock now.`,
+      onClick: async () => {
+        await lockVault(ws);
+      },
+    };
+  }
+
+  return {
+    icon: 'lock',
+    iconColor: 'var(--color-warning)',
+    label: 'Unlock Vault',
+    title: 'Vault locked. Click to unlock with Master Password.',
+    onClick: async () => {
+      await promptUnlockVault(ws);
+    },
+  };
+}
+
+/**
+ * Refresh the cached vault status for the active workspace when viewing a Grid page.
  */
 export async function updateVaultBadge() {
   const badgeBtn = document.getElementById('_vaultStatusBadge');
-  if (!badgeBtn) return;
+  if (badgeBtn) badgeBtn.hidden = true;
 
   const ws = state.currentLocation;
-  if (!ws || isHelpWorkspace(ws)) {
-    badgeBtn.hidden = true;
+  if (!ws || isHelpWorkspace(ws) || !isGridPage()) {
     return;
   }
 
-  if (!isGridPage()) {
-    badgeBtn.hidden = true;
-    return;
-  }
-
-  const status = await fetchVaultStatus(ws);
-  if (state.currentLocation !== ws || !isGridPage()) {
-    badgeBtn.hidden = true;
-    return;
-  }
-  if (!status.configured) {
-    if (status.has_legacy_key) {
-      badgeBtn.hidden = false;
-      badgeBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 18px; color: var(--color-warning);">warning</span> <span style="font-size: 11px;">Legacy Key</span>`;
-      badgeBtn.title = 'Legacy Fernet Key in use. Click to upgrade to Master Password vault.';
-      badgeBtn.onclick = () => openVaultMigrateModal(ws, () => { void updateVaultBadge(); });
-    } else {
-      badgeBtn.hidden = true;
-    }
-    return;
-  }
-
-  badgeBtn.hidden = false;
-  if (status.unlocked) {
-    const mins = Math.max(1, Math.round(status.expires_in_seconds / 60));
-    badgeBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 18px; color: var(--color-accent);">lock_open</span> <span style="font-size: 11px;">${mins}m</span>`;
-    badgeBtn.title = `Vault unlocked (~${mins}m idle remaining). Click to lock now.`;
-    badgeBtn.onclick = async () => {
-      await lockVault(ws);
-    };
-  } else {
-    badgeBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 18px; color: var(--color-warning);">lock</span> <span style="font-size: 11px;">Locked</span>`;
-    badgeBtn.title = 'Vault locked. Click to unlock with Master Password.';
-    badgeBtn.onclick = async () => {
-      await promptUnlockVault(ws);
-    };
-  }
+  await fetchVaultStatus(ws);
 }

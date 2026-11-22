@@ -1,6 +1,6 @@
 // bpmn.js — Business Process page type using bpmn-js (lazy-loaded from CDN)
 import { state, withLocation, refreshPages, isHelpWorkspace, showStyledConfirmModal } from './app.js';
-import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs } from './sidebar.js';
+import { renderPageList, slugify, createPageActionMenu, updateSidebarVisibility, setHeaderBreadcrumbs, buildPagePath } from './sidebar.js';
 import { cleanupActiveNoteEditor } from './note.js';
 import { showErrorBubble, parseApiError, createEditorActionButtons, handleTabNavigation, navigateAfterPageCancel, validateNewPageTitle } from './ui-utils.js';
 import { openConfirmModal } from './modal.js';
@@ -294,22 +294,22 @@ async function renderBpmnView(page, slug, location, cachedDeps = null) {
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   activeThemeObserver = observer;
 
-  // Actions: Edit button & menu
-  if (actionsEl) {
+  // Actions: page menu (contains Edit in view mode)
+  if (actionsEl && !isHelpWorkspace(location)) {
     actionsEl.innerHTML = '';
-    const editBtn = document.createElement('button');
-    editBtn.id = 'editBpmnPageBtn';
-    editBtn.type = 'button';
-    editBtn.className = 'page-header__icon-btn';
-    editBtn.title = 'Edit (e)';
-    editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">edit</span>';
-    editBtn.addEventListener('click', () => { void enterEditMode(page, slug, location, deps); });
-    actionsEl.appendChild(editBtn);
-
-    if (!isHelpWorkspace(location)) {
-      const menuBtn = createPageActionMenu(slug, page['page-name'], 'bpmn', location, true);
-      actionsEl.appendChild(menuBtn);
-    }
+    const menuBtn = createPageActionMenu(slug, page['page-name'], 'bpmn', location, true, {
+      getHeaderItems: () => [
+        {
+          id: 'editBpmnPageBtn',
+          icon: 'edit',
+          label: 'Edit',
+          shortcut: 'e',
+          title: 'Edit (e)',
+          onClick: () => { void enterEditMode(page, slug, location, deps); },
+        },
+      ],
+    });
+    actionsEl.appendChild(menuBtn);
   }
 }
 
@@ -345,7 +345,7 @@ function createBpmnKeyHandler({ requestCancel, save }) {
  * Switch to interactive edit mode: make title editable, enable BPMN modeler,
  * show Save / Cancel toolbar.
  */
-async function enterEditMode(page, slug, location, deps) {
+async function enterEditMode(page, slug, location, deps, { focusContent = false } = {}) {
   const titleEl   = document.getElementById('pageTitle');
   const actionsEl = document.getElementById('contentActions');
   const grid      = document.getElementById('pageGrid');
@@ -355,18 +355,24 @@ async function enterEditMode(page, slug, location, deps) {
   const originalPage = structuredClone(page);
   const originalSlug = slug;
 
+  const onTitleKeyDown = (e) => { if (e.key === 'Enter') e.preventDefault(); };
+
   // Make title editable
   if (titleEl) {
     titleEl.setAttribute('contenteditable', 'plaintext-only');
     titleEl.classList.add('content__title--editing');
-    titleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
-    titleEl.focus();
-    const range = document.createRange();
-    range.selectNodeContents(titleEl);
-    range.collapse(false);
-    const sel = globalThis.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    titleEl.addEventListener('keydown', onTitleKeyDown);
+    if (!focusContent) {
+      titleEl.focus();
+      const range = document.createRange();
+      range.selectNodeContents(titleEl);
+      range.collapse(false);
+      const sel = globalThis.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      titleEl.blur();
+    }
   }
 
   unmountBpmn();
@@ -375,6 +381,7 @@ async function enterEditMode(page, slug, location, deps) {
   const container = document.createElement('div');
   container.className = 'bpmn-container';
   container.id = 'bpmnEditorContainer';
+  container.tabIndex = 0;
   grid.appendChild(container);
 
   const { BpmnModeler } = deps;
@@ -395,6 +402,10 @@ async function enterEditMode(page, slug, location, deps) {
     showErrorBubble(`Could not load diagram into editor: ${err.message}`);
   }
 
+  if (focusContent) {
+    requestAnimationFrame(() => container.focus({ preventScroll: true }));
+  }
+
   // Observe container size changes (e.g. sidebar toggle or window resize)
   activeResizeObserver = new ResizeObserver(() => {
     try {
@@ -413,6 +424,7 @@ async function enterEditMode(page, slug, location, deps) {
     const cancel = () => {
       document.removeEventListener('keydown', onKeyDown, { capture: true });
       if (titleEl) {
+        titleEl.removeEventListener('keydown', onTitleKeyDown);
         titleEl.removeAttribute('contenteditable');
         titleEl.classList.remove('content__title--editing', 'content__title--error');
       }
@@ -479,6 +491,7 @@ async function enterEditMode(page, slug, location, deps) {
         };
 
         if (titleEl) {
+          titleEl.removeEventListener('keydown', onTitleKeyDown);
           titleEl.removeAttribute('contenteditable');
           titleEl.classList.remove('content__title--editing');
         }
@@ -552,12 +565,26 @@ export function createBpmnPage(targetLocation = null) {
   contentEl?.classList.remove('content--markdown', 'content--whiteboard');
   contentEl?.classList.add('content--bpmn');
 
+  const onTitleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      void save({ stayInEditMode: true });
+    }
+  };
+  const onTitleInput = () => {
+    if (titleEl?.textContent.trim()) {
+      titleEl.classList.remove('content__title--error');
+    }
+  };
+
   // Empty editable title
   if (titleEl) {
     titleEl.textContent = '';
     titleEl.setAttribute('contenteditable', 'plaintext-only');
     titleEl.classList.add('content__title--editing');
-    titleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+    titleEl.addEventListener('keydown', onTitleKeyDown);
+    titleEl.addEventListener('input', onTitleInput);
   }
 
   unmountBpmn();
@@ -571,25 +598,23 @@ export function createBpmnPage(targetLocation = null) {
   loader.tabIndex = 0;
   grid.appendChild(loader);
 
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'btn btn--ghost';
-  cancelBtn.textContent = 'Cancel';
+  let disposed = false;
+  let loadedDeps = null;
 
-  const saveBtn = document.createElement('button');
-  saveBtn.type = 'button';
-  saveBtn.className = 'btn btn--primary';
-  saveBtn.textContent = 'Save';
+  const { saveBtn, cancelBtn } = createEditorActionButtons(
+    () => { void save(); },
+    () => { void requestCancel(); },
+  );
 
   if (actionsEl) {
-    actionsEl.appendChild(cancelBtn);
     actionsEl.appendChild(saveBtn);
+    actionsEl.appendChild(cancelBtn);
   }
 
   const getContentFocusElement = () => document.getElementById('bpmnNewContainer') ?? loader;
 
   const handleCreateTabOrder = (e) => {
-    handleTabNavigation(e, [titleEl, getContentFocusElement(), cancelBtn, saveBtn]);
+    handleTabNavigation(e, [titleEl, getContentFocusElement(), saveBtn, cancelBtn]);
   };
 
   titleEl?.addEventListener('keydown', handleCreateTabOrder);
@@ -601,7 +626,10 @@ export function createBpmnPage(targetLocation = null) {
 
   let onKeyDown;
   const cleanup = () => {
+    disposed = true;
     document.removeEventListener('keydown', onKeyDown, { capture: true });
+    titleEl?.removeEventListener('keydown', onTitleKeyDown);
+    titleEl?.removeEventListener('input', onTitleInput);
     titleEl?.removeEventListener('keydown', handleCreateTabOrder);
     loader.removeEventListener('keydown', handleCreateTabOrder);
     cancelBtn.removeEventListener('keydown', handleCreateTabOrder);
@@ -620,22 +648,26 @@ export function createBpmnPage(targetLocation = null) {
     await navigateAfterPageCancel(targetLocation, state, loadPage, updateSidebarVisibility);
   };
 
-  const save = async () => {
+  let isSaving = false;
+  const save = async ({ stayInEditMode = false } = {}) => {
+    if (isSaving) return;
     const { valid, title: newName, slug: newSlug } = validateNewPageTitle(titleEl, effectiveLocation, state, slugify);
     if (!valid) return;
 
-    if (!activeInstance) {
+    if (!activeInstance && !stayInEditMode) {
       showErrorBubble(titleEl, 'BPMN editor is still loading.');
       return;
     }
 
-    let exportedXml;
-    try {
-      const result = await activeInstance.saveXML({ format: true });
-      exportedXml = result.xml;
-    } catch (err) {
-      showErrorBubble(titleEl, `Exporting diagram failed: ${err.message}`);
-      return;
+    let exportedXml = DEFAULT_BPMN_XML;
+    if (activeInstance) {
+      try {
+        const result = await activeInstance.saveXML({ format: true });
+        exportedXml = result.xml;
+      } catch (err) {
+        showErrorBubble(titleEl, `Exporting diagram failed: ${err.message}`);
+        return;
+      }
     }
 
     const payload = JSON.stringify({
@@ -643,6 +675,7 @@ export function createBpmnPage(targetLocation = null) {
       bpmn_xml: exportedXml,
     });
 
+    isSaving = true;
     saveBtn.disabled = true;
     try {
       const path = withLocation('/bpmn', effectiveLocation);
@@ -658,6 +691,7 @@ export function createBpmnPage(targetLocation = null) {
           titleEl?.focus();
           showErrorBubble(titleEl, 'A page with this name already exists.');
           saveBtn.disabled = false;
+          isSaving = false;
           return;
         }
         throw new Error(parseApiError(msg, 'Failed to create BPMN diagram.'));
@@ -665,15 +699,31 @@ export function createBpmnPage(targetLocation = null) {
       await refreshPages();
 
       cleanup();
-      const { loadPage } = await import('./sidebar.js');
-      renderPageList();
-      const match = state.pages.find(
-        p => p.slug === newSlug && (p.location ?? '') === (effectiveLocation ?? '')
-      ) ?? state.pages.find(p => p.slug === newSlug);
-      if (match) await loadPage(match.slug, match.location ?? null);
+      if (stayInEditMode) {
+        const updatedPage = {
+          'page-name': newName,
+          page_type: 'bpmn',
+          bpmnData: { 'page-name': newName, bpmn_xml: exportedXml },
+        };
+        state.currentSlug = newSlug;
+        state.currentLocation = effectiveLocation;
+        state.currentPage = updatedPage;
+        history.pushState({ slug: newSlug, location: effectiveLocation }, '', buildPagePath(newSlug, effectiveLocation));
+        renderPageList();
+        const deps = loadedDeps ?? await loadBpmnDeps();
+        await enterEditMode(updatedPage, newSlug, effectiveLocation, deps, { focusContent: true });
+      } else {
+        const { loadPage } = await import('./sidebar.js');
+        renderPageList();
+        const match = state.pages.find(
+          p => p.slug === newSlug && (p.location ?? '') === (effectiveLocation ?? '')
+        ) ?? state.pages.find(p => p.slug === newSlug);
+        if (match) await loadPage(match.slug, match.location ?? null);
+      }
     } catch (err) {
       showErrorBubble(titleEl, `Save failed: ${err.message}`);
       saveBtn.disabled = false;
+      isSaving = false;
     }
   };
 
@@ -688,14 +738,13 @@ export function createBpmnPage(targetLocation = null) {
     await cancel();
   };
 
-  cancelBtn.addEventListener('click', () => { void requestCancel(); });
-  saveBtn.addEventListener('click', () => { void save(); });
-
   onKeyDown = createBpmnKeyHandler({ requestCancel, save });
   document.addEventListener('keydown', onKeyDown, { capture: true });
 
   void loadBpmnDeps()
     .then(async (deps) => {
+      if (disposed) return;
+      loadedDeps = deps;
       loader.remove();
       const container = document.createElement('div');
       container.className = 'bpmn-container';

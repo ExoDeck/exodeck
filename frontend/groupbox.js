@@ -1,7 +1,9 @@
 // groupbox.js — Group box component
 import { state, apiFetch, withLocation, isHelpWorkspace } from './app.js';
 import { openModal, openConfirmModal } from './modal.js';
-import { renderPage } from './content.js';
+import { renderPage, focusGridGroupCard } from './content.js';
+import { moveGroupToPage } from './reorganize.js';
+import { parseApiError } from './ui-utils.js';
 import { renderMarkdownToElement, updateMarkdownCheckbox } from './markdown-utils.js';
 import { renderNoteItem, renderEncryptedNoteItem, openNoteWindow, openEncryptedNoteWindow } from './notes.js';
 import { buildInfoTable } from './note.js';
@@ -508,6 +510,114 @@ export async function deleteGroupBox(group, groupIndex, slug, location) {
   renderPage(state.currentPage);
 }
 
+function openMoveGroupModal(group, groupIndex, slug, location) {
+  if (!group || isHelpWorkspace(location)) return;
+  const activeLoc = location ?? state.currentLocation ?? null;
+  const otherGridPages = (state.pages ?? [])
+    .filter(p =>
+      !p.hidden &&
+      (!p.page_type || p.page_type === 'grid') &&
+      p.slug !== slug &&
+      (p.location ?? null) === activeLoc
+    )
+    .sort((a, b) => (a.page_name ?? a.slug).localeCompare(b.page_name ?? b.slug, undefined, { sensitivity: 'base' }));
+
+  document.getElementById('_moveGroupModal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = '_moveGroupModal';
+  overlay.className = 'modal-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', '_moveGroupModalTitle');
+
+  const titleEl = document.createElement('h2');
+  titleEl.className = 'modal__title';
+  titleEl.id = '_moveGroupModalTitle';
+  const fallbackLabel = group.type === 'sticky' ? 'sticky note' : 'group';
+  titleEl.textContent = `Move \u201c${group.title || fallbackLabel}\u201d to\u2026`;
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'modal__error';
+  errorEl.hidden = true;
+
+  const listEl = document.createElement('div');
+  listEl.className = 'modal__location-list';
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'modal__actions';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn--ghost';
+  cancelBtn.textContent = 'Cancel';
+  actionsEl.appendChild(cancelBtn);
+
+  modal.appendChild(titleEl);
+  modal.appendChild(errorEl);
+  modal.appendChild(listEl);
+  modal.appendChild(actionsEl);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  };
+  const close = () => {
+    document.removeEventListener('keydown', onKeyDown, true);
+    overlay.remove();
+  };
+
+  cancelBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  document.addEventListener('keydown', onKeyDown, true);
+
+  if (otherGridPages.length === 0) {
+    const emptyMsg = document.createElement('p');
+    emptyMsg.style.color = 'var(--color-text-muted)';
+    emptyMsg.style.fontSize = 'var(--font-size-sm)';
+    emptyMsg.textContent = 'No other grid pages in this workspace.';
+    listEl.appendChild(emptyMsg);
+    cancelBtn.focus();
+    return;
+  }
+
+  for (const targetPage of otherGridPages) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn--ghost modal__location-option';
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px; margin-right: 8px;" aria-hidden="true">grid_view</span>';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = targetPage.page_name ?? targetPage.slug;
+    btn.appendChild(nameSpan);
+
+    btn.addEventListener('click', async () => {
+      listEl.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      errorEl.hidden = true;
+      try {
+        await moveGroupToPage(slug, activeLoc, groupIndex, targetPage.slug, activeLoc);
+        close();
+      } catch (err) {
+        errorEl.textContent = parseApiError(err, 'Failed to move.');
+        errorEl.hidden = false;
+        listEl.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      }
+    });
+    listEl.appendChild(btn);
+  }
+
+  listEl.querySelector('button')?.focus();
+}
+
 // ---------------------------------------------------------------------------
 // Sticky Note Group helpers & renderer
 // ---------------------------------------------------------------------------
@@ -795,6 +905,7 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
     { action: 'change-color', label: 'Change color', icon: 'palette' },
     { action: 'set-due-date', label: 'Set due date', icon: 'event' },
     { action: 'sticky-info', label: 'Info', icon: 'info' },
+    { action: 'move-box', label: 'Move to \u2026', icon: 'open_with' },
     { divider: true },
     { action: 'delete-box', label: 'Delete box', danger: true, icon: 'delete' },
   ];
@@ -929,6 +1040,8 @@ function renderStickyGroup(group, groupIndex, slug, location = null) {
       void openStickyInfoModal(group, slug).catch(err => {
         console.error('[ExoDeck] Sticky note info failed:', err);
       });
+    } else if (action === 'move-box') {
+      openMoveGroupModal(group, groupIndex, slug, location);
     } else if (action === 'delete-box') {
       void deleteGroupBox(group, groupIndex, slug, location).catch(err => {
         console.error('[ExoDeck] Action failed:', err);
@@ -968,7 +1081,7 @@ export function createNewStickyNoteCard(slug, location = null) {
     header,
     titleEl,
     onSave: async (newTitle, newText) => {
-      await apiFetch(withLocation(`/pages/${slug}/groups`, location), {
+      const res = await apiFetch(withLocation(`/pages/${slug}/groups`, location), {
         method: 'POST',
         body: JSON.stringify({
           title: newTitle,
@@ -979,7 +1092,9 @@ export function createNewStickyNoteCard(slug, location = null) {
         }),
       });
       state.currentPage = await apiFetch(withLocation(`/pages/${slug}`, location));
+      const newIndex = res?.group_index ?? (state.currentPage.groups?.length ? state.currentPage.groups.length - 1 : null);
       renderPage(state.currentPage);
+      focusGridGroupCard(newIndex);
     },
     onCancel: () => renderPage(state.currentPage),
   });
@@ -1019,6 +1134,7 @@ export function renderGroup(group, groupIndex, slug, location = null) {
       ...(canEncrypt ? [{ action: 'add-password', label: 'Add password', icon: 'key' }] : []),
       { action: 'delete-items', label: 'Delete items', icon: 'delete' },
       { action: 'change-color', label: 'Change color', icon: 'palette' },
+      { action: 'move-box', label: 'Move to \u2026', icon: 'open_with' },
       { divider: true },
       { action: 'delete-box', label: 'Delete box', danger: true, icon: 'delete' },
     ];
@@ -1146,6 +1262,10 @@ export function renderGroup(group, groupIndex, slug, location = null) {
       colorPicker.hidden = false;
       _openColorPicker = colorPicker;
       attachOutsideCloseListener(colorPicker, menuBtn);
+      return;
+    }
+    if (btn.dataset.action === 'move-box') {
+      openMoveGroupModal(group, groupIndex, slug, location);
       return;
     }
     const handlers = { 'add-link': doAddLink, 'add-note': doAddNote, 'add-enc-note': doAddEncryptedNote, 'add-task': doAddTask, 'add-password': doAddPassword, 'delete-items': doDeleteItems, 'delete-box': doDeleteBox };
