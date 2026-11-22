@@ -575,7 +575,7 @@ function isGridNavigable(e) {
   if (!isActiveGridPage()) {
     return false;
   }
-  if (e.target instanceof Element && e.target.closest('#gridAddGroup')) {
+  if (e.target instanceof Element && e.target.closest('#gridAddGroup') && (e.key === 'Enter' || e.key === ' ')) {
     return false;
   }
   return !isTypingContext(e.target) && !isOverlayActive() && !document.querySelector('.group-card__menu:not([hidden])');
@@ -596,6 +596,10 @@ function handleGridHorizontalNav(e, groupCards, currentGroupIdx) {
       c.querySelectorAll('.item--focused').forEach(item => item.classList.remove('item--focused'));
     }
   });
+
+  if (groupCards[nextGroupIdx]?.id !== 'gridAddGroup' && document.activeElement instanceof HTMLElement && document.activeElement.closest('#gridAddGroup')) {
+    document.activeElement.blur();
+  }
 }
 
 function getNextItemIndex(currentItemIdx, key, itemsCount) {
@@ -609,7 +613,7 @@ function getNextItemIndex(currentItemIdx, key, itemsCount) {
 }
 
 function handleGridVerticalNav(e, currentGroup) {
-  if (currentGroup.classList.contains('group-card--add')) return;
+  if (currentGroup.id === 'gridAddGroup' || currentGroup.classList.contains('group-card--add')) return;
 
   const items = Array.from(currentGroup.querySelectorAll('.item'));
   if (items.length === 0) return;
@@ -647,9 +651,9 @@ function activateItem(e, focusedItem) {
 }
 
 function handleGridActivation(e, currentGroup) {
-  if (e.key === 'Enter' && currentGroup.classList.contains('group-card--add')) {
+  if ((e.key === 'Enter' || e.key === ' ') && (currentGroup.id === 'gridAddGroup' || currentGroup.classList.contains('group-card--add'))) {
     e.preventDefault();
-    const addBtn = currentGroup.querySelector('.group-card__add-btn');
+    const addBtn = currentGroup.querySelector('.grid-add-group__btn, .group-card__add-btn');
     addBtn?.click();
     return;
   }
@@ -667,7 +671,7 @@ function handleGridActivation(e, currentGroup) {
 }
 
 function handleGridDelete(e, currentGroup) {
-  if (currentGroup.classList.contains('group-card--add') || isHelpWorkspace(state.currentLocation)) return;
+  if (currentGroup.id === 'gridAddGroup' || currentGroup.classList.contains('group-card--add') || isHelpWorkspace(state.currentLocation)) return;
   const groupIndex = Number(currentGroup.dataset.groupIndex);
   const group = state.currentPage?.groups?.[groupIndex];
   if (!group) return;
@@ -682,10 +686,14 @@ function handleGridNavigation(e) {
   const grid = document.getElementById('pageGrid');
   if (!grid || grid.classList.contains('content__grid--edit-mode')) return;
 
-  const groupCards = Array.from(grid.querySelectorAll('.group-card'));
+  const groupCards = Array.from(grid.querySelectorAll('.group-card, #gridAddGroup'));
   if (groupCards.length === 0) return;
 
-  const currentGroupIdx = groupCards.findIndex(c => c.classList.contains('group-card--focused'));
+  let currentGroupIdx = groupCards.findIndex(c => c.classList.contains('group-card--focused'));
+  if (currentGroupIdx === -1 && document.activeElement instanceof Element) {
+    const activeAdd = document.activeElement.closest('#gridAddGroup');
+    if (activeAdd) currentGroupIdx = groupCards.indexOf(activeAdd);
+  }
   if (currentGroupIdx === -1) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Delete') return;
     e.preventDefault();
@@ -721,6 +729,9 @@ function handleEscapeKeydown(e) {
   }
   const focusedCards = document.querySelectorAll('.group-card--focused, .item--focused');
   focusedCards.forEach(el => el.classList.remove('group-card--focused', 'item--focused'));
+  if (document.activeElement instanceof HTMLElement && document.activeElement.closest('#gridAddGroup')) {
+    document.activeElement.blur();
+  }
 }
 
 const keyHandlers = {
