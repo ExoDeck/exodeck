@@ -411,8 +411,9 @@ async function handleAddShortcut() {
 // Public init
 // ---------------------------------------------------------------------------
 
-function isOverlayActive() {
+function isOverlayActive({ ignoreActionMenu = false } = {}) {
   if (document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden]), .group-card--sticky-editing')) return true;
+  if (!ignoreActionMenu && document.querySelector('.add-page-menu--open')) return true;
   const floatingNav = document.getElementById('floatingNav');
   if (floatingNav && !floatingNav.hasAttribute('hidden')) return true;
   const notifOverlay = document.getElementById('notificationOverlay');
@@ -559,7 +560,7 @@ function handleTKeydown(e) {
 function triggerHeaderMenuShortcut(e, selector) {
   if (
     e.ctrlKey || e.altKey || e.metaKey ||
-    isTypingContext(e.target) || isOverlayActive() ||
+    isTypingContext(e.target) || isOverlayActive({ ignoreActionMenu: true }) ||
     document.body.classList.contains('mermaid-viewer-open')
   ) {
     return;
