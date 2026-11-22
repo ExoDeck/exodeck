@@ -512,39 +512,50 @@ export function closeActionMenuPanel(menuTrigger, menuPanel) {
   }
 }
 
-export function attachActionMenuKeydown(menuPanel, closeMenu) {
-  menuPanel.addEventListener('keydown', (e) => {
-    if (!menuPanel.classList.contains('add-page-menu--open')) return;
-    const items = getVisibleActionMenuItems(menuPanel);
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      closeMenu();
-      return;
-    }
-    if (items.length === 0) return;
-    const idx = items.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      items[(idx + 1) % items.length].focus();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      items[(idx - 1 + items.length) % items.length].focus();
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      items[0].focus();
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      items[items.length - 1].focus();
-    }
-  });
+function getMenuArrowTargetIndex(key, currentIndex, count) {
+  if (key === 'ArrowDown') {
+    return currentIndex === -1 ? 0 : (currentIndex + 1) % count;
+  }
+  if (key === 'ArrowUp') {
+    return currentIndex === -1 ? count - 1 : (currentIndex - 1 + count) % count;
+  }
+  if (key === 'Home') return 0;
+  if (key === 'End') return count - 1;
+  return -1;
+}
+
+function handleActionMenuKeydownEvent(e, menuPanel, closeMenu) {
+  if (!menuPanel.classList.contains('add-page-menu--open')) return false;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    return true;
+  }
+  const items = getVisibleActionMenuItems(menuPanel);
+  if (items.length === 0) return false;
+  const idx = items.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
+  const nextIdx = getMenuArrowTargetIndex(e.key, idx, items.length);
+  if (nextIdx === -1) return false;
+  e.preventDefault();
+  e.stopPropagation();
+  items[nextIdx].focus();
+  return true;
+}
+
+export function attachActionMenuKeydown(menuPanel, closeMenu, menuTrigger = null) {
+  const onKeydown = (e) => {
+    handleActionMenuKeydownEvent(e, menuPanel, closeMenu);
+  };
+  menuPanel.addEventListener('keydown', onKeydown);
+  menuTrigger?.addEventListener('keydown', onKeydown);
 }
 
 export function wirePageActionMenu(menuTrigger, menuPanel, closeMenu, renderExtraItems, headerOptions = null) {
   menuTrigger.setAttribute('aria-haspopup', 'menu');
   menuTrigger.setAttribute('aria-expanded', 'false');
 
-  attachActionMenuKeydown(menuPanel, closeMenu);
+  attachActionMenuKeydown(menuPanel, closeMenu, menuTrigger);
 
   menuTrigger.addEventListener('click', (e) => {
     e.preventDefault();
@@ -2616,7 +2627,7 @@ export function initSidebar() {
   if (hamburgerBtn && hamburgerMenuPanel) {
     hamburgerBtn.setAttribute('aria-haspopup', 'menu');
     hamburgerBtn.setAttribute('aria-expanded', 'false');
-    attachActionMenuKeydown(hamburgerMenuPanel, closeHamburgerMenu);
+    attachActionMenuKeydown(hamburgerMenuPanel, closeHamburgerMenu, hamburgerBtn);
 
     hamburgerBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -2835,10 +2846,23 @@ export function initSidebar() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeHamburgerMenu();
-      document.querySelectorAll('.add-page-menu--open').forEach(el => el.classList.remove('add-page-menu--open'));
+      document.querySelectorAll('.add-page-menu--open').forEach(el => {
+        el.classList.remove('add-page-menu--open');
+        el.previousElementSibling?.setAttribute('aria-expanded', 'false');
+      });
       if (isFloatingNavOpen) {
         closeFloatingNavigator();
       }
+      return;
+    }
+
+    const openActionMenu = /** @type {HTMLElement|null} */ (document.querySelector('.add-page-menu--open'));
+    if (openActionMenu && !document.querySelector('.modal, .modal-overlay, .add-picker, .note-window-overlay, .keynav:not([hidden])')) {
+      handleActionMenuKeydownEvent(e, openActionMenu, () => {
+        closeHamburgerMenu();
+        openActionMenu.classList.remove('add-page-menu--open');
+        openActionMenu.previousElementSibling?.setAttribute('aria-expanded', 'false');
+      });
       return;
     }
 
