@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/ExoDeck/exodeck/internal/config"
 	"github.com/ExoDeck/exodeck/internal/models"
@@ -46,6 +47,9 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 422, "invalid config values: "+err.Error())
 		return
 	}
+	if newCfg.VaultTimeoutMinutes <= 0 {
+		newCfg.VaultTimeoutMinutes = config.DefaultVaultTimeoutMinutes
+	}
 
 	// Apply updated workspaces to the live store — validate BEFORE saving to disk
 	defaultDataDir := s.ConfigDir + "/data"
@@ -61,6 +65,9 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.Store.SetWorkspaces(locs, order)
+	if s.Vault != nil {
+		s.Vault.SetAutoLockDuration(time.Duration(newCfg.VaultTimeoutMinutes) * time.Minute)
+	}
 
 	jsonOK(w, newCfg)
 }

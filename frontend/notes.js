@@ -1,7 +1,7 @@
 // notes.js — Note items component
 import { state, apiFetch, withLocation, isHelpWorkspace } from './app.js';
 import { renderMarkdownToElement, updateMarkdownCheckbox } from './markdown-utils.js';
-import { promptUnlockVault } from './vault.js';
+import { promptUnlockVault, retryAfterVaultUnlock } from './vault.js';
 import { decodeNote, encodeNote, openGridNoteView } from './note.js';
 
 /**
@@ -57,10 +57,10 @@ function renderGenericNoteItem({ isEncrypted, item, itemIndex, groupIndex, slug,
           state.currentPage.groups[groupIndex].items[itemIndex].text = payloadText;
         }
       }
-      await apiFetch(withLocation(`/pages/${slug}/groups/${groupIndex}/items/${itemIndex}`, location), {
-        method: 'PUT',
-        body: JSON.stringify(updated),
-      });
+      await retryAfterVaultUnlock(location, () => apiFetch(
+        withLocation(`/pages/${slug}/groups/${groupIndex}/items/${itemIndex}`, location),
+        { method: 'PUT', body: JSON.stringify(updated) }
+      ));
       if (state.currentSlug === slug && (state.currentLocation ?? null) === (location ?? null)) {
         state.currentPage = await apiFetch(withLocation(`/pages/${slug}`, location));
       }

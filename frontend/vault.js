@@ -3,6 +3,98 @@ import { apiFetch, withLocation, state, isHelpWorkspace } from './app.js';
 import { renderPage } from './content.js';
 import { parseApiError } from './ui-utils.js';
 
+const vaultLockTimers = new Map();
+
+/**
+ * Cancel any scheduled auto-lock check timer for a workspace.
+ * @param {string|null} [location]
+ */
+export function clearVaultAutoLockTimer(location = null) {
+  const ws = location || state.currentLocation || '';
+  if (!ws) return;
+  const timerId = vaultLockTimers.get(ws);
+  if (timerId) {
+    clearTimeout(timerId);
+    vaultLockTimers.delete(ws);
+  }
+}
+
+function isEditingEncryptedContent(ws) {
+  const gn = state.activeGridNote;
+  if (gn?.isEncrypted && gn?.isEditing && (gn.location || state.currentLocation || '') === ws) {
+    return true;
+  }
+  const pwWin = document.getElementById('_pwWindow');
+  if (pwWin && (state.currentLocation || '') === ws) {
+    const editPane = pwWin.querySelector('.pw-edit');
+    if (editPane && !editPane.hidden) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function handleVaultAutoLockCheck(ws) {
+  vaultLockTimers.delete(ws);
+  if (!ws || isHelpWorkspace(ws)) return;
+
+  const res = await fetchVaultStatus(ws);
+  if (res.unlocked || !res.configured) {
+    return;
+  }
+
+  // Keep open editors intact; saving will prompt the user to unlock via retryAfterVaultUnlock.
+  if (isEditingEncryptedContent(ws)) {
+    return;
+  }
+
+  if ((state.currentLocation || '') === ws && state.currentSlug) {
+    try {
+      state.currentPage = await apiFetch(withLocation(`/pages/${encodeURIComponent(state.currentSlug)}`, ws));
+    } catch (err) {
+      console.error('Failed to refresh page after vault auto-lock:', err);
+    }
+  }
+
+  document.dispatchEvent(new CustomEvent('exodeck:vault-locked', { detail: { workspace: ws } }));
+
+  if ((state.currentLocation || '') === ws && state.currentPage && isGridPage()) {
+    renderPage(state.currentPage);
+  }
+}
+
+/**
+ * Schedule a browser-side check when the workspace vault idle timeout is expected to elapse.
+ * @param {string|null} ws
+ * @param {number} expiresInSeconds
+ */
+export function scheduleVaultAutoLock(ws, expiresInSeconds) {
+  if (!ws || isHelpWorkspace(ws)) return;
+  clearVaultAutoLockTimer(ws);
+  if (!(expiresInSeconds > 0)) return;
+
+  const delayMs = Math.min((expiresInSeconds * 1000) + 500, 2147483647);
+  const timerId = setTimeout(() => {
+    void handleVaultAutoLockCheck(ws);
+  }, delayMs);
+  vaultLockTimers.set(ws, timerId);
+}
+
+/**
+ * Synchronize browser auto-lock timers for all workspaces from a bootstrap status map.
+ * @param {Record<string, { configured?: boolean, unlocked?: boolean, expires_in_seconds?: number }>|null|undefined} statusMap
+ */
+export function syncVaultAutoLockTimers(statusMap) {
+  if (!statusMap || typeof statusMap !== 'object') return;
+  for (const [ws, status] of Object.entries(statusMap)) {
+    if (status?.configured && status?.unlocked && status.expires_in_seconds > 0) {
+      scheduleVaultAutoLock(ws, status.expires_in_seconds);
+    } else {
+      clearVaultAutoLockTimer(ws);
+    }
+  }
+}
+
 function isValidFernetKey(key) {
   if (typeof key !== 'string') return false;
   return (key.length === 43 || key.length === 44) && /^[A-Za-z0-9\-_]+={0,2}$/.test(key);
@@ -50,11 +142,17 @@ export async function fetchVaultStatus(location = null) {
     const res = await apiFetch(`/workspaces/${encodeURIComponent(ws)}/vault/status`);
     if (!state.vaultStatus) state.vaultStatus = {};
     state.vaultStatus[ws] = res;
+    if (res.configured && res.unlocked && res.expires_in_seconds > 0) {
+      scheduleVaultAutoLock(ws, res.expires_in_seconds);
+    } else {
+      clearVaultAutoLockTimer(ws);
+    }
     return res;
   } catch {
     const fallback = { configured: false, unlocked: false, has_legacy_key: false, expires_in_seconds: 0 };
     if (!state.vaultStatus) state.vaultStatus = {};
     state.vaultStatus[ws] = fallback;
+    clearVaultAutoLockTimer(ws);
     return fallback;
   }
 }
@@ -85,6 +183,7 @@ export async function lockVault(location = null) {
   if (!ws || isHelpWorkspace(ws)) return;
   try {
     await apiFetch(`/workspaces/${encodeURIComponent(ws)}/vault/lock`, { method: 'POST' });
+    clearVaultAutoLockTimer(ws);
     if (state.vaultStatus?.[ws]) {
       state.vaultStatus[ws].unlocked = false;
       state.vaultStatus[ws].expires_in_seconds = 0;
@@ -103,9 +202,11 @@ export async function lockVault(location = null) {
 /**
  * Prompt the user with a modal to unlock the vault.
  * @param {string|null} location
+ * @param {{ refreshPage?: boolean }} [options]
  * @returns {Promise<boolean>} resolves true if unlocked, false if cancelled
  */
-export async function promptUnlockVault(location = null) {
+export async function promptUnlockVault(location = null, options = {}) {
+  const { refreshPage = true } = options;
   const ws = location || state.currentLocation || '';
   if (!ws || isHelpWorkspace(ws)) return true;
 
@@ -171,11 +272,21 @@ export async function promptUnlockVault(location = null) {
       toggleBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 18px;">${isPw ? 'visibility_off' : 'visibility'}</span>`;
     });
 
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup(false);
+      }
+    };
+
     const cleanup = (success) => {
+      document.removeEventListener('keydown', onKeyDown, true);
       overlay.remove();
       resolve(success);
     };
 
+    document.addEventListener('keydown', onKeyDown, true);
     modal.querySelector('._vault_close').addEventListener('click', () => cleanup(false));
     modal.querySelector('._vault_cancel').addEventListener('click', () => cleanup(false));
     overlay.addEventListener('click', (e) => {
@@ -193,17 +304,25 @@ export async function promptUnlockVault(location = null) {
       submitBtn.textContent = 'Verifying...';
 
       try {
-        await apiFetch(`/workspaces/${encodeURIComponent(ws)}/vault/unlock`, {
+        const res = await apiFetch(`/workspaces/${encodeURIComponent(ws)}/vault/unlock`, {
           method: 'POST',
           body: JSON.stringify({ password: pwd }),
         });
 
-        if (state.vaultStatus?.[ws]) {
-          state.vaultStatus[ws].unlocked = true;
+        if (!state.vaultStatus) state.vaultStatus = {};
+        const expiresIn = res?.expires_in_seconds ?? state.vaultStatus[ws]?.expires_in_seconds ?? 0;
+        state.vaultStatus[ws] = {
+          ...(state.vaultStatus[ws] ?? {}),
+          configured: true,
+          unlocked: true,
+          expires_in_seconds: expiresIn,
+        };
+        if (expiresIn > 0) {
+          scheduleVaultAutoLock(ws, expiresIn);
         }
 
-        // Refetch and re-render current page
-        if (state.currentSlug) {
+        // Refetch and re-render current page unless preserving active editor state
+        if (refreshPage && state.currentSlug) {
           state.currentPage = await apiFetch(withLocation(`/pages/${state.currentSlug}`, ws));
           renderPage(state.currentPage);
         }
@@ -220,6 +339,30 @@ export async function promptUnlockVault(location = null) {
 
     input.focus();
   });
+}
+
+/**
+ * Run an async API operation and, if it fails with HTTP 423 (vault locked),
+ * prompt the user to unlock the vault without discarding active editor state,
+ * then retry the operation once unlocked.
+ * @template T
+ * @param {string|null} location
+ * @param {() => Promise<T>} operation
+ * @returns {Promise<T>}
+ */
+export async function retryAfterVaultUnlock(location, operation) {
+  try {
+    return await operation();
+  } catch (err) {
+    if (err?.status !== 423) {
+      throw err;
+    }
+    const unlocked = await promptUnlockVault(location, { refreshPage: false });
+    if (!unlocked) {
+      throw err;
+    }
+    return operation();
+  }
 }
 
 /**

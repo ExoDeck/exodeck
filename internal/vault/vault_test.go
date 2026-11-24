@@ -196,3 +196,38 @@ func TestVaultAdditionalMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestVaultSetAutoLockDuration(t *testing.T) {
+	mgr := vault.New(0)
+	if got := mgr.AutoLockDuration(); got != vault.DefaultAutoLockDuration {
+		t.Fatalf("default duration = %v, want %v", got, vault.DefaultAutoLockDuration)
+	}
+
+	mgr.SetAutoLockDuration(30 * time.Minute)
+	if got := mgr.AutoLockDuration(); got != 30*time.Minute {
+		t.Fatalf("updated duration = %v, want 30m", got)
+	}
+
+	mgr.SetAutoLockDuration(0)
+	if got := mgr.AutoLockDuration(); got != vault.DefaultAutoLockDuration {
+		t.Fatalf("non-positive reset = %v, want %v", got, vault.DefaultAutoLockDuration)
+	}
+
+	// Shortening timeout immediately locks unlocked workspaces already idle past the new limit.
+	mgr.SetKey("ws-shorten", []byte("01234567890123456789012345678901"))
+	time.Sleep(40 * time.Millisecond)
+	mgr.SetAutoLockDuration(20 * time.Millisecond)
+	if mgr.IsUnlocked("ws-shorten") {
+		t.Fatal("expected workspace idle past shortened timeout to be locked immediately")
+	}
+
+	// Background timer scrubs expired keys even without GetKey/IsUnlocked polling,
+	// so increasing the timeout afterward does not resurrect an expired key.
+	mgr.SetAutoLockDuration(35 * time.Millisecond)
+	mgr.SetKey("ws-bg", []byte("01234567890123456789012345678901"))
+	time.Sleep(90 * time.Millisecond)
+	mgr.SetAutoLockDuration(10 * time.Minute)
+	if mgr.IsUnlocked("ws-bg") {
+		t.Fatal("expected background timer to scrub expired key before timeout increase")
+	}
+}

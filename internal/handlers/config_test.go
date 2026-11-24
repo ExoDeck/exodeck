@@ -20,10 +20,13 @@ func TestGetConfigReturnsDefaultsWhenNoFile(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET config: %d", code)
 	}
-	for _, key := range []string{"theme", "port", "groupbox_max_width", "font_size_ui", "enable_git_sync"} {
+	for _, key := range []string{"theme", "port", "groupbox_max_width", "font_size_ui", "vault_timeout_minutes", "enable_git_sync"} {
 		if _, ok := body[key]; !ok {
 			t.Errorf("config missing key %q", key)
 		}
+	}
+	if body["vault_timeout_minutes"] != float64(15) {
+		t.Errorf("vault_timeout_minutes = %v, want 15", body["vault_timeout_minutes"])
 	}
 }
 
@@ -45,6 +48,9 @@ func TestGetConfigReturnsPersistedValues(t *testing.T) {
 	// Default key still present
 	if body["groupbox_max_width"] == nil {
 		t.Error("groupbox_max_width missing after partial config")
+	}
+	if body["vault_timeout_minutes"] != float64(15) {
+		t.Errorf("vault_timeout_minutes = %v, want 15 when unset", body["vault_timeout_minutes"])
 	}
 }
 
@@ -117,5 +123,50 @@ func TestGetAndPutConfigCorruptFileReturns500(t *testing.T) {
 	codePut, _ := put(t, ts, "/api/v1/config", map[string]interface{}{"theme": "light"})
 	if codePut != http.StatusInternalServerError {
 		t.Errorf("expected 500 for PUT with corrupt config.json, got %d", codePut)
+	}
+}
+
+func TestPutConfigUpdatesVaultTimeoutImmediately(t *testing.T) {
+	ts, _, dataDir, _ := newTestServerFull(t)
+
+	// Setup and unlock vault
+	setupCode, _ := post(t, ts, "/api/v1/workspaces/default/vault/setup", map[string]string{"password": "MasterPassword123!"})
+	if setupCode != http.StatusOK {
+		t.Fatalf("vault setup: %d", setupCode)
+	}
+
+	workspaces := []map[string]interface{}{{"name": "default", "path": dataDir}}
+
+	// Update vault_timeout_minutes to 45
+	code, body := put(t, ts, "/api/v1/config", map[string]interface{}{
+		"vault_timeout_minutes": 45,
+		"workspaces":            workspaces,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("PUT config: %d %v", code, body)
+	}
+	if body["vault_timeout_minutes"] != float64(45) {
+		t.Errorf("vault_timeout_minutes = %v, want 45", body["vault_timeout_minutes"])
+	}
+
+	statusCode, statusBody := get(t, ts, "/api/v1/workspaces/default/vault/status")
+	if statusCode != http.StatusOK {
+		t.Fatalf("GET vault status: %d %v", statusCode, statusBody)
+	}
+	expiresIn, _ := statusBody["expires_in_seconds"].(float64)
+	if expiresIn <= 15*60 {
+		t.Errorf("expected expires_in_seconds > 900 after setting timeout to 45m, got %v", expiresIn)
+	}
+
+	// Non-positive timeout falls back to 15
+	code2, body2 := put(t, ts, "/api/v1/config", map[string]interface{}{
+		"vault_timeout_minutes": 0,
+		"workspaces":            workspaces,
+	})
+	if code2 != http.StatusOK {
+		t.Fatalf("PUT config fallback: %d %v", code2, body2)
+	}
+	if body2["vault_timeout_minutes"] != float64(15) {
+		t.Errorf("vault_timeout_minutes fallback = %v, want 15", body2["vault_timeout_minutes"])
 	}
 }

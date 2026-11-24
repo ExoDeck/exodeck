@@ -21,6 +21,7 @@ import (
 	"github.com/ExoDeck/exodeck/internal/mcp"
 	"github.com/ExoDeck/exodeck/internal/models"
 	"github.com/ExoDeck/exodeck/internal/storage"
+	"github.com/ExoDeck/exodeck/internal/vault"
 )
 
 // ResolveConfigDir determines the working directory for configuration, data, and cache.
@@ -109,6 +110,7 @@ func main() {
 	// Build HTTP server
 	srv := &handlers.Server{
 		Store:      store,
+		Vault:      vault.New(time.Duration(cfg.VaultTimeoutMinutes) * time.Minute),
 		ConfigDir:  configLocation,
 		FrontendFS: FrontendFS,
 	}

@@ -121,6 +121,7 @@ A sample configuration ([`config.json.example`](config.json.example)):
   "font_size_note": 16,
   "font_size_links": 16,
   "port": 8000,
+  "vault_timeout_minutes": 15,
   "workspaces": [
     {
       "name": "Default",

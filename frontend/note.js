@@ -19,6 +19,7 @@ import {
 import { openConfirmModal, openModal } from './modal.js';
 import { renderPage } from './content.js';
 import { isEditModeActive, exitEditMode } from './reorganize.js';
+import { retryAfterVaultUnlock } from './vault.js';
 
 let activeEditorCleanup = null;
 
@@ -28,6 +29,14 @@ let activeEditorCleanup = null;
 export function cleanupActiveNoteEditor() {
   activeEditorCleanup?.();
 }
+
+document.addEventListener('exodeck:vault-locked', (e) => {
+  const lockedWs = e.detail?.workspace ?? '';
+  const gn = state.activeGridNote;
+  if (!gn || !gn.isEncrypted || gn.isEditing) return;
+  if ((gn.location ?? state.currentLocation ?? '') !== lockedWs) return;
+  void closeActiveGridNote({ force: true });
+});
 
 /**
  * Decode a Base64-encoded UTF-8 string.
@@ -78,10 +87,10 @@ export async function saveActiveNoteMarkdown(newRaw) {
     const payload = gn.isEncrypted
       ? { title: gn.title, enc_text: newRaw }
       : { title: gn.title, text: encodeNote(newRaw) };
-    await apiFetch(
+    await retryAfterVaultUnlock(gn.location, () => apiFetch(
       withLocation(`/pages/${encodeURIComponent(gn.slug)}/groups/${gn.groupIndex}/items/${gn.itemIndex}`, gn.location),
       { method: 'PUT', body: JSON.stringify(payload) }
-    );
+    ));
     gn.rawMarkdown = newRaw;
     if (gn.item) {
       if (gn.isEncrypted) gn.item.enc_text = newRaw;
@@ -1541,25 +1550,30 @@ export function openInlineNoteEditor({
       isSaving = true;
       saveBtn.disabled = true;
       try {
-        let savedItemIndex = effectiveGridNote.itemIndex;
-        if (effectiveGridNote.isNew) {
-          const res = await apiFetch(
-            withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}/groups/${effectiveGridNote.groupIndex}/items`, effectiveGridNote.location),
-            { method: 'POST', body: JSON.stringify(payload) }
-          );
-          if (typeof res?.item_index === 'number') {
-            savedItemIndex = res.item_index;
+        const { nextItemIndex, freshPage } = await retryAfterVaultUnlock(effectiveGridNote.location, async () => {
+          let itemIdx = effectiveGridNote.itemIndex;
+          if (effectiveGridNote.isNew) {
+            const res = await apiFetch(
+              withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}/groups/${effectiveGridNote.groupIndex}/items`, effectiveGridNote.location),
+              { method: 'POST', body: JSON.stringify(payload) }
+            );
+            if (typeof res?.item_index === 'number') {
+              itemIdx = res.item_index;
+            }
+          } else {
+            await apiFetch(
+              withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}/groups/${effectiveGridNote.groupIndex}/items/${effectiveGridNote.itemIndex}`, effectiveGridNote.location),
+              { method: 'PUT', body: JSON.stringify(payload) }
+            );
           }
-        } else {
-          await apiFetch(
-            withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}/groups/${effectiveGridNote.groupIndex}/items/${effectiveGridNote.itemIndex}`, effectiveGridNote.location),
-            { method: 'PUT', body: JSON.stringify(payload) }
-          );
-        }
 
-        const freshPage = await apiFetch(
-          withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}`, effectiveGridNote.location)
-        );
+          const pageData = await apiFetch(
+            withLocation(`/pages/${encodeURIComponent(effectiveGridNote.slug)}`, effectiveGridNote.location)
+          );
+          return { nextItemIndex: itemIdx, freshPage: pageData };
+        });
+
+        let savedItemIndex = nextItemIndex;
         state.currentPage = freshPage;
 
         const items = freshPage?.groups?.[effectiveGridNote.groupIndex]?.items ?? [];

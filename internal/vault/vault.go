@@ -42,6 +42,7 @@ type VaultMeta struct {
 type sessionKey struct {
 	key        []byte
 	lastActive time.Time
+	timer      *time.Timer
 }
 
 // Manager manages in-memory session keys and vault operations.
@@ -51,15 +52,45 @@ type Manager struct {
 	autoLockDuration time.Duration
 }
 
+// DefaultAutoLockDuration is the default idle timeout before an unlocked vault locks.
+const DefaultAutoLockDuration = 15 * time.Minute
+
 // New creates a new Manager with the given auto-lock idle timeout.
 func New(autoLockDuration time.Duration) *Manager {
 	if autoLockDuration <= 0 {
-		autoLockDuration = 15 * time.Minute
+		autoLockDuration = DefaultAutoLockDuration
 	}
 	return &Manager{
 		keys:             make(map[string]*sessionKey),
 		autoLockDuration: autoLockDuration,
 	}
+}
+
+// SetAutoLockDuration updates the auto-lock idle timeout. Non-positive values use DefaultAutoLockDuration.
+// Existing unlocked workspaces that already exceed the new timeout are locked immediately;
+// remaining ones have their background expiration timer rescheduled.
+func (m *Manager) SetAutoLockDuration(d time.Duration) {
+	if d <= 0 {
+		d = DefaultAutoLockDuration
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.autoLockDuration = d
+	for ws, sk := range m.keys {
+		elapsed := time.Since(sk.lastActive)
+		if elapsed >= d {
+			m.evictLocked(ws, sk)
+			continue
+		}
+		m.resetTimerLocked(ws, sk, d-elapsed)
+	}
+}
+
+// AutoLockDuration returns the current auto-lock idle timeout.
+func (m *Manager) AutoLockDuration() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.autoLockDuration
 }
 
 // VaultMetaPath returns the path to vault metadata for a workspace.
@@ -178,13 +209,15 @@ func (m *Manager) Unlock(workspaceName, workspacePath, password string) error {
 
 	// Clear existing key if any
 	if existing, ok := m.keys[workspaceName]; ok {
-		zeroBytes(existing.key)
+		m.evictLocked(workspaceName, existing)
 	}
 
-	m.keys[workspaceName] = &sessionKey{
+	sk := &sessionKey{
 		key:        key,
 		lastActive: time.Now(),
 	}
+	sk.timer = m.newLockTimerLocked(workspaceName, sk, m.autoLockDuration)
+	m.keys[workspaceName] = sk
 
 	return nil
 }
@@ -195,8 +228,7 @@ func (m *Manager) Lock(workspaceName string) {
 	defer m.mu.Unlock()
 
 	if sk, ok := m.keys[workspaceName]; ok {
-		zeroBytes(sk.key)
-		delete(m.keys, workspaceName)
+		m.evictLocked(workspaceName, sk)
 	}
 }
 
@@ -206,8 +238,7 @@ func (m *Manager) LockAll() {
 	defer m.mu.Unlock()
 
 	for k, sk := range m.keys {
-		zeroBytes(sk.key)
-		delete(m.keys, k)
+		m.evictLocked(k, sk)
 	}
 }
 
@@ -221,9 +252,8 @@ func (m *Manager) IsUnlocked(workspaceName string) bool {
 		return false
 	}
 
-	if time.Since(sk.lastActive) > m.autoLockDuration {
-		zeroBytes(sk.key)
-		delete(m.keys, workspaceName)
+	if time.Since(sk.lastActive) >= m.autoLockDuration {
+		m.evictLocked(workspaceName, sk)
 		return false
 	}
 
@@ -237,6 +267,7 @@ func (m *Manager) Touch(workspaceName string) {
 
 	if sk, ok := m.keys[workspaceName]; ok {
 		sk.lastActive = time.Now()
+		m.resetTimerLocked(workspaceName, sk, m.autoLockDuration)
 	}
 }
 
@@ -250,13 +281,13 @@ func (m *Manager) GetKey(workspaceName string) ([]byte, bool) {
 		return nil, false
 	}
 
-	if time.Since(sk.lastActive) > m.autoLockDuration {
-		zeroBytes(sk.key)
-		delete(m.keys, workspaceName)
+	if time.Since(sk.lastActive) >= m.autoLockDuration {
+		m.evictLocked(workspaceName, sk)
 		return nil, false
 	}
 
 	sk.lastActive = time.Now()
+	m.resetTimerLocked(workspaceName, sk, m.autoLockDuration)
 	out := make([]byte, len(sk.key))
 	copy(out, sk.key)
 	return out, true
@@ -268,15 +299,17 @@ func (m *Manager) SetKey(workspaceName string, key []byte) {
 	defer m.mu.Unlock()
 
 	if existing, ok := m.keys[workspaceName]; ok {
-		zeroBytes(existing.key)
+		m.evictLocked(workspaceName, existing)
 	}
 
 	keyCopy := make([]byte, len(key))
 	copy(keyCopy, key)
-	m.keys[workspaceName] = &sessionKey{
+	sk := &sessionKey{
 		key:        keyCopy,
 		lastActive: time.Now(),
 	}
+	sk.timer = m.newLockTimerLocked(workspaceName, sk, m.autoLockDuration)
+	m.keys[workspaceName] = sk
 }
 
 // ExpiresIn returns the duration remaining before auto-lock, or 0 if locked.
@@ -294,6 +327,46 @@ func (m *Manager) ExpiresIn(workspaceName string) time.Duration {
 		return 0
 	}
 	return m.autoLockDuration - elapsed
+}
+
+func (m *Manager) newLockTimerLocked(workspaceName string, sk *sessionKey, d time.Duration) *time.Timer {
+	if d <= 0 {
+		d = time.Nanosecond
+	}
+	return time.AfterFunc(d, func() {
+		m.expireWorkspace(workspaceName, sk)
+	})
+}
+
+func (m *Manager) resetTimerLocked(workspaceName string, sk *sessionKey, d time.Duration) {
+	if sk.timer != nil {
+		sk.timer.Stop()
+	}
+	sk.timer = m.newLockTimerLocked(workspaceName, sk, d)
+}
+
+func (m *Manager) evictLocked(workspaceName string, sk *sessionKey) {
+	if sk.timer != nil {
+		sk.timer.Stop()
+	}
+	zeroBytes(sk.key)
+	delete(m.keys, workspaceName)
+}
+
+func (m *Manager) expireWorkspace(workspaceName string, target *sessionKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sk, ok := m.keys[workspaceName]
+	if !ok || sk != target {
+		return
+	}
+	elapsed := time.Since(sk.lastActive)
+	if elapsed < m.autoLockDuration {
+		sk.timer = m.newLockTimerLocked(workspaceName, sk, m.autoLockDuration-elapsed)
+		return
+	}
+	m.evictLocked(workspaceName, sk)
 }
 
 func zeroBytes(b []byte) {

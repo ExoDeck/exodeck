@@ -10,21 +10,26 @@ import (
 	"github.com/ExoDeck/exodeck/internal/models"
 )
 
-const configFileName = "config.json"
+const (
+	configFileName = "config.json"
+	// DefaultVaultTimeoutMinutes is the default idle auto-lock timeout for workspace vaults.
+	DefaultVaultTimeoutMinutes = 15
+)
 
 // Defaults returns a ConfigModel populated with application defaults.
 func Defaults() models.ConfigModel {
 	return models.ConfigModel{
-		Theme:            "dark",
-		GroupboxMaxWidth: 420,
-		FontSizeUI:       14,
-		FontSizeNote:     16,
-		FontSizeLinks:    14,
-		Port:             8000,
-		Workspaces:       []interface{}{},
-		EnableGitSync:    false,
-		LogLevel:         "info",
-		LogFile:          "",
+		Theme:               "dark",
+		GroupboxMaxWidth:    420,
+		FontSizeUI:          14,
+		FontSizeNote:        16,
+		FontSizeLinks:       14,
+		Port:                8000,
+		VaultTimeoutMinutes: DefaultVaultTimeoutMinutes,
+		Workspaces:          []interface{}{},
+		EnableGitSync:       false,
+		LogLevel:            "info",
+		LogFile:             "",
 	}
 }
 
@@ -65,6 +70,12 @@ func Load(dir string) (models.ConfigModel, error) {
 	}
 	if v, ok := raw["port"]; ok {
 		_ = json.Unmarshal(v, &cfg.Port)
+	}
+	if v, ok := raw["vault_timeout_minutes"]; ok {
+		var timeout int
+		if err := json.Unmarshal(v, &timeout); err == nil && timeout > 0 {
+			cfg.VaultTimeoutMinutes = timeout
+		}
 	}
 	if v, ok := raw["enable_git_sync"]; ok {
 		_ = json.Unmarshal(v, &cfg.EnableGitSync)

@@ -21,6 +21,7 @@ const DEFAULTS = {
     font_size_ui: 14,
     font_size_note: 16,
     font_size_links: 14,
+    vault_timeout_minutes: 15,
 };
 
 
@@ -252,6 +253,10 @@ export async function openConfigModal() {
             <label class="modal__label" for="_cfg_port">Port</label>
             <input class="modal__input" id="_cfg_port" type="number" min="1" max="65535" step="1"
               value="${current.port ?? 8000}" />
+
+            <label class="modal__label" for="_cfg_vault_timeout">Vault lock timeout (min)</label>
+            <input class="modal__input" id="_cfg_vault_timeout" type="number" min="1" max="1440" step="1"
+              value="${current.vault_timeout_minutes ?? 15}" />
           </div>
 
           <div class="config-modal__section">
@@ -704,6 +709,10 @@ export async function openConfigModal() {
         const fsMd = Number.parseInt(modal.querySelector('#_cfg_fs_md').value, 10) || current.font_size_note;
         const fsLk = Number.parseInt(modal.querySelector('#_cfg_fs_lk').value, 10) || current.font_size_links;
         const port = Number.parseInt(modal.querySelector('#_cfg_port').value, 10) || (current.port ?? 8000);
+        const rawVaultTimeout = Number.parseInt(modal.querySelector('#_cfg_vault_timeout').value, 10);
+        const vaultTimeout = Number.isFinite(rawVaultTimeout) && rawVaultTimeout > 0
+            ? rawVaultTimeout
+            : (current.vault_timeout_minutes || 15);
         const enableGitSync = modal.querySelector('#_cfg_git_sync').checked;
 
         const dataLocations = [];
@@ -722,6 +731,7 @@ export async function openConfigModal() {
             font_size_note: fsMd,
             font_size_links: fsLk,
             port,
+            vault_timeout_minutes: vaultTimeout,
             enable_git_sync: enableGitSync,
             workspaces: dataLocations,
         };
