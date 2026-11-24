@@ -1362,7 +1362,11 @@ a:hover {
 .item__note-body li:has(> input[type="checkbox"]),
 .item__note-body li:has(> p > input[type="checkbox"]),
 .note-window__view li:has(> input[type="checkbox"]),
-.note-window__view li:has(> p > input[type="checkbox"]) {
+.note-window__view li:has(> p > input[type="checkbox"]),
+.group-card__sticky-body li:has(> input[type="checkbox"]),
+.group-card__sticky-body li:has(> .task-list-checkbox),
+.group-card__sticky-body li:has(> p > input[type="checkbox"]),
+.group-card__sticky-body li:has(> p > .task-list-checkbox) {
   list-style-type: none;
 }
 
@@ -2791,19 +2795,34 @@ a:hover {
 
 .group-card__sticky-body ul,
 .group-card__sticky-body ol {
-  padding-left: var(--space-lg);
+  padding-left: 0;
+  list-style-position: inside;
+}
+
+.group-card__sticky-body li ul,
+.group-card__sticky-body li ol {
+  padding-left: 1.25em;
+  margin-bottom: 0;
 }
 
 .group-card__sticky-body ul {
-  list-style: disc;
+  list-style-type: disc;
 }
 
 .group-card__sticky-body ol {
-  list-style: decimal;
+  list-style-type: decimal;
 }
 
 .group-card__sticky-body li {
   display: list-item;
+}
+
+.group-card__sticky-body li > p:first-child {
+  display: inline;
+}
+
+.group-card__sticky-body .task-list-checkbox {
+  margin-left: 0;
 }
 
 .group-card__sticky-body h1,
@@ -4171,7 +4190,8 @@ a:hover {
 .md-page__content li > *:last-child,
 .markdown-body li > *:last-child,
 .item__note-body li > *:last-child,
-.note-window__view li > *:last-child {
+.note-window__view li > *:last-child,
+.group-card__sticky-body li > *:last-child {
   margin-bottom: 0;
 }
 
@@ -5639,6 +5659,10 @@ code.inline-code-wrapper .inline-code-copy-btn .copy-icon-success {
   pointer-events: auto;
 }
 
+.md-table-box:has(.md-table-actions--floating)::before {
+  display: none;
+}
+
 .md-table-actions {
   position: absolute;
   top: -30px;
@@ -5649,6 +5673,28 @@ code.inline-code-wrapper .inline-code-copy-btn .copy-icon-success {
   pointer-events: none;
   transition: opacity 0.2s;
   z-index: 10;
+}
+
+.md-table-actions--floating {
+  position: fixed;
+  top: auto;
+  z-index: 105;
+}
+
+.md-table-actions--floating::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--md-table-actions-bridge, 4px);
+  pointer-events: none;
+}
+
+.md-table-wrapper:hover .md-table-actions--floating::after,
+.md-table-editing .md-table-actions--floating::after,
+.md-table-actions--floating:focus-within::after {
+  pointer-events: auto;
 }
 
 .md-table-wrapper:hover .md-table-actions,
