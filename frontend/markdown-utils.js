@@ -726,8 +726,101 @@ function resolveFlexJustify(textAlign) {
   return 'flex-start';
 }
 
+function resetFloatingTableActions(actions) {
+  actions.classList.remove('md-table-actions--floating');
+  actions.style.top = '';
+  actions.style.right = '';
+  actions.style.removeProperty('--md-table-actions-bridge');
+}
+
+function updateFloatingTableActions(table, tableBox, actions, contentEl, appHeaderEl, contentActionsEl) {
+  if (!table.isConnected || !contentEl || !appHeaderEl) {
+    resetFloatingTableActions(actions);
+    return;
+  }
+
+  const boxRect = tableBox.getBoundingClientRect();
+  const contentRect = contentEl.getBoundingClientRect();
+  const headerRect = appHeaderEl.getBoundingClientRect();
+
+  if (
+    boxRect.bottom <= contentRect.top + 8 ||
+    boxRect.top >= contentRect.bottom ||
+    boxRect.top - contentRect.top >= 32
+  ) {
+    resetFloatingTableActions(actions);
+    return;
+  }
+
+  const actionsHeight = actions.offsetHeight || 28;
+  const actionsWidth = actions.offsetWidth || 60;
+  const desiredTop = boxRect.top - actionsHeight - 2;
+  const minTop = headerRect.top + Math.max(4, Math.floor((headerRect.height - actionsHeight) / 2));
+  const top = Math.max(minTop, desiredTop);
+
+  let right = Math.max(8, window.innerWidth - boxRect.right);
+  if (contentActionsEl && contentActionsEl.offsetWidth > 0) {
+    const caRect = contentActionsEl.getBoundingClientRect();
+    if (top < caRect.bottom && boxRect.right > caRect.left - 8) {
+      right = Math.max(right, window.innerWidth - (caRect.left - 8));
+    }
+  }
+  const maxRight = Math.max(8, window.innerWidth - actionsWidth - 8);
+  right = Math.min(right, maxRight);
+
+  const visibleTableTop = Math.max(contentRect.top, boxRect.top);
+  const bridgeHeight = Math.max(4, Math.ceil(visibleTableTop - (top + actionsHeight)) + 2);
+
+  actions.classList.add('md-table-actions--floating');
+  actions.style.top = `${top}px`;
+  actions.style.right = `${right}px`;
+  actions.style.setProperty('--md-table-actions-bridge', `${bridgeHeight}px`);
+}
+
+function setupFloatingTableActionsCoordinator(containerElement, contentEl, entries) {
+  if (!contentEl) return;
+  contentEl._ExoDeckTableFloatCleanup?.();
+  if (entries.length === 0) return;
+
+  const updateAll = () => {
+    if (!containerElement.isConnected) {
+      cleanup();
+      return;
+    }
+    for (const entry of entries) {
+      entry.update();
+    }
+  };
+
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateAll) : null;
+  ro?.observe(contentEl);
+  for (const entry of entries) {
+    ro?.observe(entry.tableBox);
+  }
+
+  contentEl.addEventListener('scroll', updateAll, { passive: true });
+  window.addEventListener('resize', updateAll);
+
+  function cleanup() {
+    ro?.disconnect();
+    contentEl.removeEventListener('scroll', updateAll);
+    window.removeEventListener('resize', updateAll);
+    if (contentEl._ExoDeckTableFloatCleanup === cleanup) {
+      contentEl._ExoDeckTableFloatCleanup = null;
+    }
+  }
+
+  contentEl._ExoDeckTableFloatCleanup = cleanup;
+  updateAll();
+}
+
 function initTableEditing(containerElement) {
   if (!containerElement.classList.contains('md-page__content') || containerElement.classList.contains('md-editor-preview')) return;
+
+  const contentEl = containerElement.closest('#content') || document.getElementById('content');
+  const appHeaderEl = document.getElementById('appHeader');
+  const contentActionsEl = document.getElementById('contentActions');
+  const floatingEntries = [];
 
   const isReadOnlyDoc = isHelpWorkspace(state.currentLocation);
   const tables = containerElement.querySelectorAll('table');
@@ -891,6 +984,14 @@ function initTableEditing(containerElement) {
       })
       : null;
 
+    const updateActionsPosition = () => {
+      updateFloatingTableActions(table, tableBox, actions, contentEl, appHeaderEl, contentActionsEl);
+    };
+    floatingEntries.push({ tableBox, update: updateActionsPosition });
+
+    wrapper.addEventListener('mouseenter', updateActionsPosition);
+    actions.addEventListener('focusin', updateActionsPosition);
+
     function setAutoSumState(enabled) {
       isAutoSum = enabled;
       if (isAutoSum) {
@@ -908,6 +1009,7 @@ function initTableEditing(containerElement) {
       } else {
         resizeObserver?.unobserve(table);
       }
+      updateActionsPosition();
     }
 
     autoSumBtn.addEventListener('click', () => {
@@ -1023,6 +1125,7 @@ function initTableEditing(containerElement) {
       }
 
       if (isAutoSum) updateAutoSum();
+      updateActionsPosition();
 
       const cells = table.querySelectorAll('th, td');
       if (cells.length > 0) cells[0].focus();
@@ -1038,6 +1141,7 @@ function initTableEditing(containerElement) {
       const cells = table.querySelectorAll('th, td');
       cells.forEach(cell => { cell.contentEditable = 'false'; });
       if (isAutoSum) updateAutoSum();
+      updateActionsPosition();
     });
 
     function handleTableTab(e, tbl) {
@@ -1209,4 +1313,6 @@ function initTableEditing(containerElement) {
       setAutoSumState(true);
     }
   });
+
+  setupFloatingTableActionsCoordinator(containerElement, contentEl, floatingEntries);
 }
