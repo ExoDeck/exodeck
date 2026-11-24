@@ -21,6 +21,9 @@ func TestDefaultsHaveExpectedValues(t *testing.T) {
 	if d.GroupboxMaxWidth != 420 {
 		t.Errorf("default groupbox_max_width = %d, want 420", d.GroupboxMaxWidth)
 	}
+	if d.VaultTimeoutMinutes != 15 {
+		t.Errorf("default vault_timeout_minutes = %d, want 15", d.VaultTimeoutMinutes)
+	}
 	if d.EnableGitSync {
 		t.Error("default enable_git_sync should be false")
 	}
@@ -48,9 +51,10 @@ func TestLoadMergesFileOverDefaults(t *testing.T) {
 		"theme":              "light",
 		"groupbox_max_width": 550,
 		"font_size_ui":       16,
-		"font_size_note":     18,
-		"font_size_links":    15,
-		"enable_git_sync":    true,
+		"font_size_note":        18,
+		"font_size_links":       15,
+		"vault_timeout_minutes": 45,
+		"enable_git_sync":       true,
 		"workspaces":         []interface{}{"ws1", "ws2"},
 		"log_level":          "debug",
 		"log_file":           "startgrd.log",
@@ -63,9 +67,24 @@ func TestLoadMergesFileOverDefaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.Port != 9000 || cfg.Theme != "light" || cfg.GroupboxMaxWidth != 550 || cfg.FontSizeUI != 16 ||
-		cfg.FontSizeNote != 18 || cfg.FontSizeLinks != 15 || !cfg.EnableGitSync || cfg.LogLevel != "debug" ||
+		cfg.FontSizeNote != 18 || cfg.FontSizeLinks != 15 || cfg.VaultTimeoutMinutes != 45 || !cfg.EnableGitSync || cfg.LogLevel != "debug" ||
 		cfg.LogFile != "startgrd.log" || cfg.Workspaces == nil {
 		t.Errorf("fields not merged properly: %+v", cfg)
+	}
+}
+
+func TestLoadDefaultsVaultTimeoutWhenUnsetOrInvalid(t *testing.T) {
+	dir := t.TempDir()
+	raw := map[string]interface{}{"port": 8123, "vault_timeout_minutes": 0}
+	data, _ := json.Marshal(raw)
+	_ = os.WriteFile(filepath.Join(dir, "config.json"), data, 0o644)
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.VaultTimeoutMinutes != 15 {
+		t.Errorf("vault_timeout_minutes = %d, want 15 fallback", cfg.VaultTimeoutMinutes)
 	}
 }
 

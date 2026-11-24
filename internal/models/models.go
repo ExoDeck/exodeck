@@ -147,8 +147,9 @@ type ConfigModel struct {
 	FontSizeUI       int         `json:"font_size_ui"`
 	FontSizeNote     int         `json:"font_size_note"`
 	FontSizeLinks    int         `json:"font_size_links"`
-	Port             int         `json:"port"`
-	Workspaces       interface{} `json:"workspaces"` // null | map[string]any
+	Port                int         `json:"port"`
+	VaultTimeoutMinutes int         `json:"vault_timeout_minutes"`
+	Workspaces          interface{} `json:"workspaces"` // null | map[string]any
 	EnableGitSync    bool        `json:"enable_git_sync"`
 	LogLevel         string      `json:"log_level,omitempty"`
 	LogFile          string      `json:"log_file,omitempty"`

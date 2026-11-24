@@ -475,3 +475,97 @@ func TestVaultErrorCases(t *testing.T) {
 		t.Errorf("change-password unknown workspace: got %d, want 400", status)
 	}
 }
+
+func TestVaultAutoLockTimeoutUpdateAndUnlockRetry(t *testing.T) {
+	dataDir := t.TempDir()
+	store, v, ts := newTestVaultServer(t, dataDir)
+
+	status, _ := post(t, ts, "/api/v1/workspaces/default/vault/setup", map[string]string{
+		"password": "MasterPassword123!",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("setup returned %d", status)
+	}
+
+	if code, errMsg := store.WritePage("vault-page", models.Page{
+		PageName: "Vault Page",
+		Groups: []models.Group{
+			{Title: "Accounts", Items: []models.Item{}},
+		},
+	}, ""); code != 0 {
+		t.Fatalf("WritePage (%d): %s", code, errMsg)
+	}
+
+	pw := "InitialSecret"
+	status, _ = post(t, ts, "/api/v1/pages/vault-page/groups/0/items", models.Item{
+		Title:    "Account",
+		Password: &pw,
+	})
+	if status != http.StatusCreated && status != http.StatusOK {
+		t.Fatalf("create password item returned %d", status)
+	}
+
+	// Shorten timeout and wait past idle expiry without polling.
+	v.SetAutoLockDuration(40 * time.Millisecond)
+	time.Sleep(90 * time.Millisecond)
+
+	status, body := get(t, ts, "/api/v1/workspaces/default/vault/status")
+	if status != http.StatusOK {
+		t.Fatalf("status returned %d: %v", status, body)
+	}
+	if body["unlocked"] != false {
+		t.Fatalf("expected vault to auto-lock after timeout, got %v", body)
+	}
+
+	// Saving updated encrypted item while locked returns 423 Locked.
+	updatedPw := "UpdatedSecret"
+	reqBody, _ := json.Marshal(models.Item{
+		Title:    "Account",
+		Password: &updatedPw,
+	})
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/pages/vault-page/groups/0/items/0", strings.NewReader(string(reqBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusLocked {
+		t.Fatalf("expected 423 Locked when saving after auto-lock timeout, got %d", resp.StatusCode)
+	}
+
+	// Restore longer timeout, unlock in-place, and retry save.
+	v.SetAutoLockDuration(time.Minute)
+	status, _ = post(t, ts, "/api/v1/workspaces/default/vault/unlock", map[string]string{
+		"password": "MasterPassword123!",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("unlock returned %d", status)
+	}
+
+	retryReq, err := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/pages/vault-page/groups/0/items/0", strings.NewReader(string(reqBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryReq.Header.Set("Content-Type", "application/json")
+	retryResp, err := http.DefaultClient.Do(retryReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = retryResp.Body.Close()
+	if retryResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK after unlocking and retrying save, got %d", retryResp.StatusCode)
+	}
+
+	status, body = get(t, ts, "/api/v1/pages/vault-page")
+	if status != http.StatusOK {
+		t.Fatalf("get page returned %d: %v", status, body)
+	}
+	page := mapToPage(body)
+	if page.Groups[0].Items[0].Password == nil || *page.Groups[0].Items[0].Password != updatedPw {
+		t.Fatalf("expected updated password %q, got %v", updatedPw, page.Groups[0].Items[0].Password)
+	}
+}

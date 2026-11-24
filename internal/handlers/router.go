@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/ExoDeck/exodeck/internal/config"
 	"github.com/ExoDeck/exodeck/internal/mcp"
 	"github.com/ExoDeck/exodeck/internal/netutil"
 	"github.com/ExoDeck/exodeck/internal/storage"
@@ -37,7 +38,13 @@ const (
 // NewRouter creates and returns the fully configured chi router.
 func NewRouter(s *Server) http.Handler {
 	if s.Vault == nil {
-		s.Vault = vault.New(15 * time.Minute)
+		timeoutMinutes := config.DefaultVaultTimeoutMinutes
+		if s.ConfigDir != "" {
+			if cfg, err := config.Load(s.ConfigDir); err == nil && cfg.VaultTimeoutMinutes > 0 {
+				timeoutMinutes = cfg.VaultTimeoutMinutes
+			}
+		}
+		s.Vault = vault.New(time.Duration(timeoutMinutes) * time.Minute)
 	}
 
 	r := chi.NewRouter()

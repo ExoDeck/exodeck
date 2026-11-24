@@ -2,7 +2,7 @@
 import { state, apiFetch, withLocation } from './app.js';
 import { parseApiError, createWindowFrame, trapFocus } from './ui-utils.js';
 import { renderPage } from './content.js';
-import { promptUnlockVault } from './vault.js';
+import { promptUnlockVault, retryAfterVaultUnlock } from './vault.js';
 import { openPasswordGeneratorModal, calculateEntropy } from './password-generator.js';
 import { openConfirmModal } from './modal.js';
 
@@ -1257,11 +1257,13 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
     const payload = buildPayload(newTitle);
 
     try {
-      const apiUrl = isNew
-        ? withLocation(`/pages/${slug}/groups/${groupIndex}/items`, location)
-        : withLocation(`/pages/${slug}/groups/${groupIndex}/items/${itemIndex}`, location);
-      await apiFetch(apiUrl, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
-      state.currentPage = await apiFetch(withLocation(`/pages/${slug}`, location));
+      state.currentPage = await retryAfterVaultUnlock(location, async () => {
+        const apiUrl = isNew
+          ? withLocation(`/pages/${slug}/groups/${groupIndex}/items`, location)
+          : withLocation(`/pages/${slug}/groups/${groupIndex}/items/${itemIndex}`, location);
+        await apiFetch(apiUrl, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
+        return apiFetch(withLocation(`/pages/${slug}`, location));
+      });
     } catch (err) {
       errorEl.textContent = parseApiError(err, 'Failed to save password.');
       errorEl.hidden = false;
@@ -1285,12 +1287,21 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
   function closeWindow() {
     stopOtpTimer();
     document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('exodeck:vault-locked', onVaultLocked);
     overlay.remove();
     restoreFocus();
   }
 
+  const onVaultLocked = (e) => {
+    const lockedWs = e.detail?.workspace ?? '';
+    const targetWs = location ?? state.currentLocation ?? '';
+    if (lockedWs === targetWs && editDiv.hidden) {
+      closeWindow();
+    }
+  };
+
   const onKeyDown = async (e) => {
-    if (document.getElementById('_confirmModalOverlay')) return;
+    if (document.getElementById('_confirmModalOverlay') || document.getElementById('_vaultUnlockModal')) return;
     const pwGenModal = document.getElementById('_pwGenModal');
     if (pwGenModal) {
       if (e.key === 'Escape') {
@@ -1316,6 +1327,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
   };
 
   document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('exodeck:vault-locked', onVaultLocked);
 
   if (initialMode === 'edit') {
     titleEl.textContent = isNew ? 'New Password' : `🔒 ${currentItem.title}`;

@@ -10,7 +10,7 @@ import { initOutlineNav } from './outline-nav.js';
 import { initWorkspaceNav } from './workspace-nav.js';
 import { loadConfig, applyConfig, openConfigModal } from './config.js';
 import { loadMarkdownDependencies } from './markdown-utils.js';
-import { updateVaultBadge } from './vault.js';
+import { updateVaultBadge, syncVaultAutoLockTimers } from './vault.js';
 import { initNotifications, updateNotificationBadge, updateAllTasks } from './notifications.js';
 import { parseApiError, showBackendDisconnectedModal, hideBackendDisconnectedModal } from './ui-utils.js';
 
@@ -189,6 +189,7 @@ export async function refreshPages() {
   }
   if (data.vault_status) {
     state.vaultStatus = data.vault_status;
+    syncVaultAutoLockTimers(data.vault_status);
   }
   if (data.due_tasks) {
     updateNotificationBadge(data.due_tasks);
