@@ -782,6 +782,7 @@ func TestGridPagesGroupsItemsAndSecurity(t *testing.T) {
 	// Invalid update_item calls
 	for _, badUpd := range []map[string]interface{}{
 		{"slug": "engineering", "group_index": 0, "item_index": 0, "password": "secret"},
+		{"slug": "engineering", "group_index": 0, "item_index": 0, "token": "ghp_secret"},
 		{"slug": "engineering", "group_index": 99, "item_index": 0},
 		{"slug": "engineering", "group_index": 0, "item_index": 99},
 		{"slug": "engineering", "group_index": 0, "item_index": 0, "title": "  "},
@@ -790,6 +791,11 @@ func TestGridPagesGroupsItemsAndSecurity(t *testing.T) {
 		if _, errFlag := callToolHelper(t, srv, "update_item", badUpd); !errFlag {
 			t.Errorf("expected update_item to fail for %+v", badUpd)
 		}
+	}
+	if _, errFlag := callToolHelper(t, srv, "add_item", map[string]interface{}{
+		"slug": "engineering", "workspace": "Main", "group_index": 0, "title": "API Token", "item_type": "token",
+	}); !errFlag {
+		t.Errorf("expected add_item with item_type=token to fail")
 	}
 
 	// 6. move_item & delete_item & delete_group
@@ -833,6 +839,8 @@ func TestGridPagesGroupsItemsAndSecurity(t *testing.T) {
 	secretVal := "v1:encrypted-ciphertext"
 	userVal := "admin"
 	lockedTrue := true
+	tokenSecret := "v1:encrypted-token-secret"
+	tokenExp := "2026-12-01"
 	pageOnDisk.Groups[0].Items = append(pageOnDisk.Groups[0].Items,
 		models.Item{
 			Title:    "Prod DB",
@@ -842,6 +850,11 @@ func TestGridPagesGroupsItemsAndSecurity(t *testing.T) {
 		models.Item{
 			Title:  "Locked Note",
 			Locked: &lockedTrue,
+		},
+		models.Item{
+			Title:     "Deploy PAT",
+			Token:     &tokenSecret,
+			ExpiresAt: &tokenExp,
 		},
 	)
 	_, _ = srv.Store.WritePage("engineering", pageOnDisk, "Main")
@@ -854,7 +867,7 @@ func TestGridPagesGroupsItemsAndSecurity(t *testing.T) {
 		"slug":      "engineering",
 		"workspace": "Main",
 	})
-	if isErr || strings.Contains(maskedRead, "encrypted-ciphertext") || !strings.Contains(maskedRead, `"locked": true`) {
+	if isErr || strings.Contains(maskedRead, "encrypted-ciphertext") || strings.Contains(maskedRead, "encrypted-token-secret") || !strings.Contains(maskedRead, `"locked": true`) || !strings.Contains(maskedRead, `"item_type": "token"`) {
 		t.Fatalf("expected sensitive fields to be masked, got: %s", maskedRead)
 	}
 

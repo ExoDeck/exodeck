@@ -357,6 +357,7 @@ function getRecentGridEvents(pageData) {
   const inferItemType = (it) => {
     if (it.url !== undefined) return 'link';
     if (it.password !== undefined || it.otp_secret !== undefined) return 'password';
+    if (it.token !== undefined) return 'token';
     if (it.enc_text !== undefined) return 'enc_note';
     if (it.task_checked !== undefined) return 'task';
     return 'note';
@@ -395,7 +396,7 @@ function appendRecentChangesDOM(contentContainer, recent) {
   ul.style.flexDirection = 'column';
   ul.style.gap = '8px';
 
-  const typeShortMap = { link: 'link', password: 'pwd', enc_note: 'enc', task: 'task', note: 'note' };
+  const typeShortMap = { link: 'link', password: 'pwd', token: 'token', enc_note: 'enc', task: 'task', note: 'note' };
   for (const ev of recent) {
     const li = document.createElement('li');
     

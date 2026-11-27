@@ -224,7 +224,7 @@ func (s *Store) loadIndex() {
 		if idx.SearchIndex != nil {
 			s.searchIndex = idx.SearchIndex
 		}
-		if idx.Version < 3 {
+		if idx.Version < 4 {
 			s.taskIndex = nil
 		} else if idx.TaskIndex != nil {
 			s.taskIndex = idx.TaskIndex
@@ -245,7 +245,7 @@ func (s *Store) saveIndex() {
 	}
 	defer func() { _ = f.Close() }()
 	idx := IndexData{
-		Version:      3,
+		Version:      4,
 		PageEntries:  s.pageEntries,
 		SearchIndex:  s.searchIndex,
 		TaskIndex:    s.taskIndex,
@@ -1475,8 +1475,31 @@ func dueStatusForDate(dueDate string, today, tomorrow time.Time) string {
 	return ""
 }
 
-// itemDueStatus returns "overdue", "due_soon", or "" for a single task item.
+// expiryStatusForDate returns "overdue" (expired), "due_soon" (within 3 days), or "".
+func expiryStatusForDate(expiresAt string, today time.Time) string {
+	exp, err := time.Parse("2006-01-02", strings.TrimSpace(expiresAt))
+	if err != nil {
+		return ""
+	}
+	exp = exp.UTC().Truncate(24 * time.Hour)
+	if !exp.After(today) {
+		return "overdue"
+	}
+	if !exp.After(today.AddDate(0, 0, 3)) {
+		return "due_soon"
+	}
+	return ""
+}
+
+func hasExpirySupport(item models.Item) bool {
+	return item.Token != nil || item.Password != nil || item.OTPSecret != nil
+}
+
+// itemDueStatus returns "overdue", "due_soon", or "" for a single task, password, or token item.
 func itemDueStatus(item models.Item, today, tomorrow time.Time) string {
+	if hasExpirySupport(item) && item.ExpiresAt != nil {
+		return expiryStatusForDate(*item.ExpiresAt, today)
+	}
 	if item.TaskChecked == nil || *item.TaskChecked || item.TaskDueDate == nil {
 		return ""
 	}
@@ -1818,6 +1841,26 @@ func (s *Store) addTaskIndexItemsLocked(page models.Page, loc, slug string) {
 			})
 		}
 		for iIdx, item := range group.Items {
+			if hasExpirySupport(item) && item.ExpiresAt != nil && strings.TrimSpace(*item.ExpiresAt) != "" {
+				var createdAt string
+				if item.CreatedAt != nil {
+					createdAt = *item.CreatedAt
+				}
+				s.taskIndex = append(s.taskIndex, models.TaskIndexItem{
+					Location:    loc,
+					Slug:        slug,
+					PageName:    page.PageName,
+					GroupTitle:  group.Title,
+					GroupIndex:  gIdx,
+					ItemIndex:   iIdx,
+					Title:       item.Title,
+					TaskDueDate: strings.TrimSpace(*item.ExpiresAt),
+					TaskChecked: false,
+					CreatedAt:   createdAt,
+					ItemType:    item.ItemType(),
+				})
+				continue
+			}
 			if item.TaskChecked == nil || *item.TaskChecked {
 				continue
 			}
@@ -1911,19 +1954,26 @@ func (s *Store) GetDueTasks() []models.DueTask {
 			continue
 		}
 
-		due, err := time.Parse("2006-01-02", item.TaskDueDate)
-		if err != nil {
-			continue
-		}
-		due = due.UTC().Truncate(24 * time.Hour)
-
 		var status string
-		if !due.After(today) {
-			status = "overdue"
-		} else if due.Equal(tomorrow) {
-			status = "due_soon"
+		if item.ItemType == "token" || item.ItemType == "password" {
+			status = expiryStatusForDate(item.TaskDueDate, today)
+			if status == "" {
+				continue
+			}
 		} else {
-			continue
+			due, err := time.Parse("2006-01-02", item.TaskDueDate)
+			if err != nil {
+				continue
+			}
+			due = due.UTC().Truncate(24 * time.Hour)
+
+			if !due.After(today) {
+				status = "overdue"
+			} else if due.Equal(tomorrow) {
+				status = "due_soon"
+			} else {
+				continue
+			}
 		}
 
 		pageName := entry.Meta.PageName
@@ -2002,7 +2052,7 @@ func (s *Store) GetAllTasks() []models.Task {
 
 	var results []models.Task
 	for _, item := range s.taskIndex {
-		if item.ItemType == "sticky" {
+		if item.ItemType == "sticky" || item.ItemType == "token" || item.ItemType == "password" {
 			continue
 		}
 		if !visibleWorkspaces[item.Location] {

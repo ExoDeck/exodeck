@@ -569,3 +569,122 @@ func TestVaultAutoLockTimeoutUpdateAndUnlockRetry(t *testing.T) {
 		t.Fatalf("expected updated password %q, got %v", updatedPw, page.Groups[0].Items[0].Password)
 	}
 }
+
+func TestVaultTokenEncryptionMaskingAndPasswordChange(t *testing.T) {
+	dataDir := t.TempDir()
+	store, _, ts := newTestVaultServer(t, dataDir)
+
+	store.WritePage("tokens", models.Page{
+		PageName: "Tokens",
+		Groups: []models.Group{
+			{Title: "API Keys", Items: []models.Item{}},
+		},
+	}, "default")
+
+	post(t, ts, "/api/v1/workspaces/default/vault/setup", map[string]string{
+		"password": "MasterPassword123!",
+	})
+
+	tokPlain := "ghp_superSecretPAT"
+	urlPlain := "https://github.com/settings/tokens"
+	descPlain := "CI deploy token"
+	expDate := "2026-11-29"
+
+	status, body := post(t, ts, "/api/v1/pages/tokens/groups/0/items?location=default", models.Item{
+		Title:            "GitHub CI",
+		Token:            &tokPlain,
+		ExpiresAt:        &expDate,
+		TokenURL:         &urlPlain,
+		TokenDescription: &descPlain,
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("add token returned %d: %v", status, body)
+	}
+
+	pwPlain := "PwSecret999"
+	pwExpDate := "2026-11-30"
+	status, body = post(t, ts, "/api/v1/pages/tokens/groups/0/items?location=default", models.Item{
+		Title:     "Prod Password",
+		Password:  &pwPlain,
+		ExpiresAt: &pwExpDate,
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("add password returned %d: %v", status, body)
+	}
+
+	// Verify disk encryption for token, token_url, token_description, password, while expires_at remains plaintext
+	raw, _ := os.ReadFile(filepath.Join(dataDir, "tokens.grid"))
+	rawStr := string(raw)
+	if strings.Contains(rawStr, tokPlain) || strings.Contains(rawStr, urlPlain) || strings.Contains(rawStr, descPlain) || strings.Contains(rawStr, pwPlain) {
+		t.Errorf("plaintext token/password fields found on disk")
+	}
+	if !strings.Contains(rawStr, expDate) || !strings.Contains(rawStr, pwExpDate) {
+		t.Errorf("expected plaintext expires_at dates on disk for locked-vault alerts")
+	}
+
+	// Lock vault -> masked secrets, empty encrypted fields, but expires_at preserved
+	post(t, ts, "/api/v1/workspaces/default/vault/lock", nil)
+
+	status, body = get(t, ts, "/api/v1/pages/tokens?location=default")
+	if status != http.StatusOK {
+		t.Fatalf("getPage locked returned %d", status)
+	}
+	page := mapToPage(body)
+	lockedItem := page.Groups[0].Items[0]
+	if lockedItem.Locked == nil || !*lockedItem.Locked {
+		t.Errorf("expected locked = true")
+	}
+	if lockedItem.Token == nil || *lockedItem.Token != "•••••••" {
+		t.Errorf("expected masked token, got %v", lockedItem.Token)
+	}
+	if lockedItem.TokenURL == nil || *lockedItem.TokenURL != "" {
+		t.Errorf("expected masked empty token_url, got %v", lockedItem.TokenURL)
+	}
+	if lockedItem.TokenDescription == nil || *lockedItem.TokenDescription != "" {
+		t.Errorf("expected masked empty token_description, got %v", lockedItem.TokenDescription)
+	}
+	if lockedItem.ExpiresAt == nil || *lockedItem.ExpiresAt != expDate {
+		t.Errorf("expected preserved expires_at %q while locked, got %v", expDate, lockedItem.ExpiresAt)
+	}
+	lockedPwItem := page.Groups[0].Items[1]
+	if lockedPwItem.Password == nil || *lockedPwItem.Password != "•••••••" {
+		t.Errorf("expected masked password, got %v", lockedPwItem.Password)
+	}
+	if lockedPwItem.ExpiresAt == nil || *lockedPwItem.ExpiresAt != pwExpDate {
+		t.Errorf("expected preserved password expires_at %q while locked, got %v", pwExpDate, lockedPwItem.ExpiresAt)
+	}
+
+	// Creating token while locked returns 423 Locked
+	status, _ = post(t, ts, "/api/v1/pages/tokens/groups/0/items?location=default", models.Item{
+		Title: "Blocked Token",
+		Token: &tokPlain,
+	})
+	if status != http.StatusLocked {
+		t.Errorf("expected 423 Locked when saving token into locked vault, got %d", status)
+	}
+
+	// Change vault password -> token re-encrypted and readable
+	status, _ = post(t, ts, "/api/v1/workspaces/default/vault/change-password", map[string]string{
+		"old_password": "MasterPassword123!",
+		"new_password": "NewMasterPassword456!",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("change-password returned %d", status)
+	}
+
+	status, body = get(t, ts, "/api/v1/pages/tokens?location=default")
+	if status != http.StatusOK {
+		t.Fatalf("getPage after password change returned %d", status)
+	}
+	page = mapToPage(body)
+	unlockedItem := page.Groups[0].Items[0]
+	if unlockedItem.Token == nil || *unlockedItem.Token != tokPlain {
+		t.Errorf("expected decrypted token %q after password change, got %v", tokPlain, unlockedItem.Token)
+	}
+	if unlockedItem.TokenURL == nil || *unlockedItem.TokenURL != urlPlain {
+		t.Errorf("expected decrypted token_url %q after password change, got %v", urlPlain, unlockedItem.TokenURL)
+	}
+	if unlockedItem.TokenDescription == nil || *unlockedItem.TokenDescription != descPlain {
+		t.Errorf("expected decrypted token_description %q after password change, got %v", descPlain, unlockedItem.TokenDescription)
+	}
+}

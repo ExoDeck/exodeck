@@ -3,6 +3,7 @@ import { state, apiFetch, isHelpWorkspace } from './app.js';
 import { loadPage, toggleSidebar, createGridPage, createNote } from './sidebar.js';
 import { openNoteWindow, openEncryptedNoteWindow } from './notes.js';
 import { openPasswordWindow } from './password.js';
+import { openTokenWindow } from './token.js';
 import { openTaskWindow } from './task.js';
 import { addItemToGroup, deleteGroupBox } from './groupbox.js';
 import { startInlineGroupCreation } from './content.js';
@@ -11,7 +12,7 @@ import { createWhiteboardPage, printWhiteboardPage } from './whiteboard.js';
 import { createBpmnPage, printBpmnPage } from './bpmn.js';
 import { printActiveNote, closeActiveGridNote } from './note.js';
 import { isOutlineFocused } from './outline-nav.js';
-import { canEncryptWorkspace, fetchVaultStatus } from './vault.js';
+import { canEncryptWorkspace, fetchVaultStatus, toggleVaultLock } from './vault.js';
 import { toggleNotificationPanel, toggleTasksPanel } from './notifications.js';
 
 // ---------------------------------------------------------------------------
@@ -258,6 +259,8 @@ async function handleResultClick(li) {
     openEncryptedNoteWindow(item, itemIndex, groupIndex, slug, location, 'view');
   } else if (itemType === 'password') {
     openPasswordWindow(item, itemIndex, groupIndex, slug, location, 'view');
+  } else if (itemType === 'token') {
+    openTokenWindow(item, itemIndex, groupIndex, slug, location, 'view');
   } else if (itemType === 'task') {
     openTaskWindow(item, itemIndex, groupIndex, slug, location, 'view');
   }
@@ -313,7 +316,8 @@ function buildAddActions() {
       { label: `Note (to ${groupName})`, value: `add_item:note:${originalGroupIdx}`, icon: 'description' },
       ...(canEncrypt ? [{ label: `Encrypted Note (to ${groupName})`, value: `add_item:enc_note:${originalGroupIdx}`, icon: 'lock' }] : []),
       { label: `Task (to ${groupName})`, value: `add_item:task:${originalGroupIdx}`, icon: 'check' },
-      ...(canEncrypt ? [{ label: `Password (to ${groupName})`, value: `add_item:password:${originalGroupIdx}`, icon: 'key' }] : []),
+      ...(canEncrypt ? [{ label: `Password (to ${groupName})`, value: `add_item:password:${originalGroupIdx}`, icon: 'password' }] : []),
+      ...(canEncrypt ? [{ label: `Token (to ${groupName})`, value: `add_item:token:${originalGroupIdx}`, icon: 'key' }] : []),
     ];
     actions.push(...groupActions, { isDivider: true });
   } else if (isGridPage && hasItemGroups) {
@@ -323,7 +327,8 @@ function buildAddActions() {
       { label: 'Note', value: 'add_item:note', icon: 'description' },
       ...(canEncrypt ? [{ label: 'Encrypted Note', value: 'add_item:enc_note', icon: 'lock' }] : []),
       { label: 'Task', value: 'add_item:task', icon: 'check' },
-      ...(canEncrypt ? [{ label: 'Password', value: 'add_item:password', icon: 'key' }] : []),
+      ...(canEncrypt ? [{ label: 'Password', value: 'add_item:password', icon: 'password' }] : []),
+      ...(canEncrypt ? [{ label: 'Token', value: 'add_item:token', icon: 'key' }] : []),
     ];
     actions.push(...itemActions, { isDivider: true });
   }
@@ -557,6 +562,13 @@ function handleTKeydown(e) {
   }
 }
 
+function handleLKeydown(e) {
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && !isTypingContext(e.target) && !isOverlayActive()) {
+    e.preventDefault();
+    void toggleVaultLock(state.currentLocation).catch(console.error);
+  }
+}
+
 function triggerHeaderMenuShortcut(e, selector) {
   if (
     e.ctrlKey || e.altKey || e.metaKey ||
@@ -646,6 +658,7 @@ function activateItem(e, focusedItem) {
   const actionEl = focusedItem.querySelector('a') || 
                    focusedItem.querySelector('.item__note-title-btn') || 
                    focusedItem.querySelector('.item__password-title-btn') ||
+                   focusedItem.querySelector('.item__token-title-btn') ||
                    focusedItem.querySelector('.item__task-title');
   actionEl?.click();
 }
@@ -749,6 +762,7 @@ const keyHandlers = {
   'N': handleNKeydown,
   't': handleTKeydown,
   'T': handleTKeydown,
+  'l': handleLKeydown,
   'm': (e) => triggerHeaderMenuShortcut(e, '#contentActions .page-header__page-menu .page-header__icon-btn'),
   '-': (e) => triggerHeaderMenuShortcut(e, '#hamburgerBtn'),
 };

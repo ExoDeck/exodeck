@@ -5,6 +5,8 @@ import { renderPage } from './content.js';
 import { promptUnlockVault, retryAfterVaultUnlock } from './vault.js';
 import { openPasswordGeneratorModal, calculateEntropy } from './password-generator.js';
 import { openConfirmModal } from './modal.js';
+import { getExpiryBadgeInfo } from './token.js';
+import { formatDate } from './task.js';
 
 /**
  * Extracts the secret key from an otpauth:// URI, or returns the trimmed input.
@@ -339,8 +341,11 @@ function findDecryptedItem(groupIndex, itemIndex, title) {
  */
 export function renderPasswordItem(item, itemIndex, groupIndex, slug, location = null) {
   const isLocked = item.locked === true;
+  const badge = getExpiryBadgeInfo(item.expires_at);
+  const statusMod = badge ? ` item--password--${badge.status === 'overdue' ? 'overdue' : 'due-soon'}` : '';
+
   const li = document.createElement('li');
-  li.className = 'item item--password';
+  li.className = `item item--password${statusMod}`;
 
   const header = document.createElement('div');
   header.className = 'item__password-header';
@@ -355,7 +360,7 @@ export function renderPasswordItem(item, itemIndex, groupIndex, slug, location =
   } else {
     lockBtn.setAttribute('aria-label', 'Copy password');
     lockBtn.title = 'Copy password';
-    lockBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">key</span>';
+    lockBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">password</span>';
   }
 
   const titleBtn = document.createElement('button');
@@ -372,6 +377,14 @@ export function renderPasswordItem(item, itemIndex, groupIndex, slug, location =
 
   header.appendChild(lockBtn);
   header.appendChild(titleBtn);
+  if (badge) {
+    const badgeEl = document.createElement('span');
+    const badgeMod = badge.status === 'overdue' ? 'overdue' : 'due-soon';
+    badgeEl.className = `item__password-badge item__password-badge--${badgeMod}`;
+    badgeEl.title = badge.fullLabel;
+    badgeEl.innerHTML = `<span class="material-symbols-outlined" style="font-size: 13px;" aria-hidden="true">notifications</span><span>${badge.shortLabel}</span>`;
+    header.appendChild(badgeEl);
+  }
   header.appendChild(editBtn);
   li.appendChild(header);
 
@@ -499,8 +512,8 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
 
   document.getElementById('_pwWindow')?.remove();
 
-  let isNew = item === null;
-  let currentItem = isNew ? { title: '', password: '', username: '', pw_url: '', pw_notes: '' } : { ...item };
+  const isNew = item === null;
+  const currentItem = isNew ? { title: '', password: '', username: '', pw_url: '', pw_notes: '', expires_at: '' } : { ...item };
   let otpTimerId = null;
   let currentOtpCode = '';
 
@@ -617,6 +630,17 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
   otpEditToggle.setAttribute('aria-label', 'Show OTP secret');
   otpEditToggle.title = 'Show OTP secret';
   otpEditToggle.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px;">visibility</span>`;
+
+  const expiresLabel = document.createElement('label');
+  expiresLabel.className = 'modal__label';
+  expiresLabel.textContent = 'Expiration Date (optional)';
+  expiresLabel.htmlFor = '_pw_expires';
+  expiresLabel.title = 'Notify 3 days before expiration';
+
+  const expiresInput = document.createElement('input');
+  expiresInput.type = 'date';
+  expiresInput.id = '_pw_expires';
+  expiresInput.className = 'modal__input';
 
   const notesLabel = document.createElement('label');
   notesLabel.className = 'modal__label';
@@ -771,6 +795,8 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
   editDiv.appendChild(otpLabel);
   editDiv.appendChild(otpRow);
   editDiv.appendChild(otpFeedback);
+  editDiv.appendChild(expiresLabel);
+  editDiv.appendChild(expiresInput);
   editDiv.appendChild(notesLabel);
   editDiv.appendChild(notesInput);
 
@@ -1086,9 +1112,8 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
     return row;
   }
 
-  function switchToView(updatedItem) {
+  function switchToView() {
     stopOtpTimer();
-    if (updatedItem) currentItem = updatedItem;
 
     titleEl.textContent = `🔒 ${currentItem.title}`;
     closeHeaderBtn.hidden = false;
@@ -1103,6 +1128,25 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
 
     const pwRow = buildViewField('Password', currentItem.password ?? '', { mono: true, maskable: true });
     if (pwRow) viewDiv.appendChild(pwRow);
+
+    if (currentItem.expires_at) {
+      const expRow = buildViewField('Expiration Date', formatDate(currentItem.expires_at));
+      if (expRow) {
+        const badge = getExpiryBadgeInfo(currentItem.expires_at);
+        if (badge) {
+          const valEl = expRow.querySelector('.pw-field__value');
+          if (valEl) {
+            const pill = document.createElement('span');
+            const mod = badge.status === 'overdue' ? 'overdue' : 'due-soon';
+            pill.className = `token-expiry-pill token-expiry-pill--${mod}`;
+            pill.textContent = badge.shortLabel === 'Expired' ? 'Expired' : `Expiring (${badge.shortLabel})`;
+            valEl.appendChild(document.createTextNode(' '));
+            valEl.appendChild(pill);
+          }
+        }
+        viewDiv.appendChild(expRow);
+      }
+    }
     
     const hasCorruptedOtp = currentItem.otp_secret && (
       currentItem.otp_secret.startsWith('gAAAAA') || currentItem.otp_secret.startsWith('v1:')
@@ -1143,6 +1187,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
     titleInput.value = currentItem.title ?? '';
     urlInput.value = currentItem.pw_url ?? '';
     usernameInput.value = currentItem.username ?? '';
+    expiresInput.value = currentItem.expires_at ?? '';
     notesInput.value = currentItem.pw_notes ?? '';
     passwordInput.value = currentItem.password ?? '';
     passwordInput.type = 'password';
@@ -1185,6 +1230,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
     const origTitle = currentItem.title ?? '';
     const origUrl = currentItem.pw_url ?? '';
     const origUsername = currentItem.username ?? '';
+    const origExpires = currentItem.expires_at ?? '';
     const origNotes = currentItem.pw_notes ?? '';
     const origPassword = currentItem.password ?? '';
     const hasCorruptedOtp = currentItem.otp_secret && (
@@ -1195,6 +1241,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
     return titleInput.value !== origTitle ||
       urlInput.value !== origUrl ||
       usernameInput.value !== origUsername ||
+      expiresInput.value !== origExpires ||
       notesInput.value !== origNotes ||
       passwordInput.value !== origPassword ||
       otpInput.value !== origOtp;
@@ -1205,11 +1252,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
       const discard = await openConfirmModal();
       if (!discard) return false;
     }
-    if (isNew) {
-      closeWindow();
-    } else {
-      switchToView();
-    }
+    closeWindow();
     return true;
   };
 
@@ -1220,6 +1263,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
       title: newTitle,
       password: passwordInput.value,
       otp_secret: validation.valid && validation.clean ? validation.clean : null,
+      ...(expiresInput.value && { expires_at: expiresInput.value }),
       ...(usernameInput.value.trim() && { username: usernameInput.value.trim() }),
       ...(urlInput.value.trim() && { pw_url: urlInput.value.trim() }),
       ...(notesInput.value.trim() && { pw_notes: notesInput.value.trim() }),
@@ -1273,15 +1317,7 @@ export function openPasswordWindow(item, itemIndex, groupIndex, slug, location =
 
     renderPage(state.currentPage);
     primaryBtn.disabled = false;
-
-    // Find the updated item in the refreshed page to switch to view mode
-    const updatedIdx = state.currentPage.groups[groupIndex].items.findIndex(it => it.title === newTitle && it.password !== undefined);
-    if (updatedIdx !== -1) {
-      itemIndex = updatedIdx;
-      isNew = false;
-    }
-    const updatedItem = updatedIdx !== -1 ? state.currentPage.groups[groupIndex].items[updatedIdx] : null;
-    switchToView(updatedItem ?? payload);
+    closeWindow();
   }
 
   function closeWindow() {

@@ -410,6 +410,7 @@ function setupPageActions(page) {
             icon: vaultAction.icon,
             iconColor: vaultAction.iconColor,
             label: vaultAction.label,
+            shortcut: vaultAction.shortcut,
             title: vaultAction.title,
             onClick: vaultAction.onClick,
           });

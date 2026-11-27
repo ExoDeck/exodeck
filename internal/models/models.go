@@ -8,17 +8,21 @@ type Item struct {
 	Notes       *string `json:"notes,omitempty"`        // link items — plain-text notes
 	Text        *string `json:"text,omitempty"`         // Base64-encoded Markdown
 	EncText     *string `json:"enc_text,omitempty"`     // Fernet-encrypted Markdown
-	Username    *string `json:"username,omitempty"`     // password items
-	Password    *string `json:"password,omitempty"`     // password items — Fernet token on disk
-	OTPSecret   *string `json:"otp_secret,omitempty"`   // password items — Fernet token on disk and TOTP generator
-	PwURL       *string `json:"pw_url,omitempty"`       // password items website URL
-	PwNotes     *string `json:"pw_notes,omitempty"`     // password items plain-text notes
-	TaskChecked *bool   `json:"task_checked,omitempty"` // presence discriminates task items
-	TaskDueDate *string `json:"task_due_date,omitempty"`
-	TaskCreated *string `json:"task_created,omitempty"`
-	CreatedAt   *string `json:"created_at,omitempty"`
-	ModifiedAt  *string `json:"modified_at,omitempty"`
-	Locked      *bool   `json:"locked,omitempty"`
+	Username         *string `json:"username,omitempty"`          // password items
+	Password         *string `json:"password,omitempty"`          // password items — Fernet token on disk
+	OTPSecret        *string `json:"otp_secret,omitempty"`        // password items — Fernet token on disk and TOTP generator
+	PwURL            *string `json:"pw_url,omitempty"`            // password items website URL
+	PwNotes          *string `json:"pw_notes,omitempty"`          // password items plain-text notes
+	Token            *string `json:"token,omitempty"`             // token items — encrypted on disk
+	ExpiresAt        *string `json:"expires_at,omitempty"`        // password & token items — YYYY-MM-DD (unencrypted for locked-vault alerts)
+	TokenURL         *string `json:"token_url,omitempty"`         // token items — optional service/renewal URL (encrypted under vault)
+	TokenDescription *string `json:"token_description,omitempty"` // token items — optional description (encrypted under vault)
+	TaskChecked      *bool   `json:"task_checked,omitempty"`      // presence discriminates task items
+	TaskDueDate      *string `json:"task_due_date,omitempty"`
+	TaskCreated      *string `json:"task_created,omitempty"`
+	CreatedAt        *string `json:"created_at,omitempty"`
+	ModifiedAt       *string `json:"modified_at,omitempty"`
+	Locked           *bool   `json:"locked,omitempty"`
 }
 
 // ItemType returns the discriminated type of the item.
@@ -28,6 +32,9 @@ func (it *Item) ItemType() string {
 	}
 	if it.Password != nil || it.OTPSecret != nil {
 		return "password"
+	}
+	if it.Token != nil {
+		return "token"
 	}
 	if it.EncText != nil {
 		return "enc_note"

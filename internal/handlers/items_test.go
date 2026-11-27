@@ -675,6 +675,135 @@ func TestOTPSecretValidationEdgeCases(t *testing.T) {
 	}
 }
 
+func TestTokenCRUDAndExpirationValidation(t *testing.T) {
+	ts, store, _ := newTestServer(t)
+
+	store.WritePage("p", models.Page{
+		PageName: "P",
+		Groups:   []models.Group{{Title: "Tokens", Items: []models.Item{}}},
+	}, "") //nolint:errcheck
+
+	post(t, ts, "/api/v1/workspaces/default/vault/setup", map[string]string{"password": "MasterPassword123!"})
+
+	// Invalid expiration date -> 400
+	code, _ := post(t, ts, "/api/v1/pages/p/groups/0/items?location=default", models.Item{
+		Title:     "Bad Token",
+		Token:     ptrS("ghp_12345"),
+		ExpiresAt: ptrS("2026/11/30"),
+	})
+	if code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid expires_at, got %d", code)
+	}
+
+	// Create valid token with expiration, URL, description
+	code, body := post(t, ts, "/api/v1/pages/p/groups/0/items?location=default", models.Item{
+		Title:            "GitHub PAT",
+		Token:            ptrS("ghp_secret123"),
+		ExpiresAt:        ptrS(" 2026-12-15 "),
+		TokenURL:         ptrS("https://github.com/settings/tokens"),
+		TokenDescription: ptrS("repo + read:org"),
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("POST token item: %d %v", code, body)
+	}
+
+	// Read back decrypted
+	code, pageBody := get(t, ts, "/api/v1/pages/p?location=default")
+	if code != http.StatusOK {
+		t.Fatalf("GET page: %d", code)
+	}
+	groups := pageBody["groups"].([]interface{})
+	items := groups[0].(map[string]interface{})["items"].([]interface{})
+	tok := items[0].(map[string]interface{})
+	if tok["token"] != "ghp_secret123" {
+		t.Errorf("token = %v, want ghp_secret123", tok["token"])
+	}
+	if tok["expires_at"] != "2026-12-15" {
+		t.Errorf("expires_at = %v, want 2026-12-15", tok["expires_at"])
+	}
+	if tok["token_url"] != "https://github.com/settings/tokens" {
+		t.Errorf("token_url = %v", tok["token_url"])
+	}
+	if tok["token_description"] != "repo + read:org" {
+		t.Errorf("token_description = %v", tok["token_description"])
+	}
+	if tok["created_at"] == nil || tok["modified_at"] == nil {
+		t.Errorf("expected created_at and modified_at timestamps, got %v", tok)
+	}
+
+	// Update with invalid date -> 400
+	code, _ = put(t, ts, "/api/v1/pages/p/groups/0/items/0?location=default", models.Item{
+		Title:     "GitHub PAT",
+		Token:     ptrS("ghp_secret123"),
+		ExpiresAt: ptrS("not-a-date"),
+	})
+	if code != http.StatusBadRequest {
+		t.Errorf("expected 400 on PUT invalid expires_at, got %d", code)
+	}
+
+	// Update with empty expiration date clears it and preserves created_at
+	code, updatedBody := put(t, ts, "/api/v1/pages/p/groups/0/items/0?location=default", models.Item{
+		Title:            "GitHub PAT Updated",
+		Token:            ptrS("ghp_rotated456"),
+		ExpiresAt:        ptrS("   "),
+		TokenDescription: ptrS("updated scope"),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("PUT token item: %d %v", code, updatedBody)
+	}
+	if updatedBody["token"] != "ghp_rotated456" {
+		t.Errorf("updated token = %v, want ghp_rotated456", updatedBody["token"])
+	}
+	if _, hasExp := updatedBody["expires_at"]; hasExp {
+		t.Errorf("expected cleared expires_at, got %v", updatedBody["expires_at"])
+	}
+	if updatedBody["created_at"] != tok["created_at"] {
+		t.Errorf("created_at changed from %v to %v", tok["created_at"], updatedBody["created_at"])
+	}
+
+	// Password item with expires_at (valid, invalid, cleared)
+	code, _ = post(t, ts, "/api/v1/pages/p/groups/0/items?location=default", models.Item{
+		Title:     "Bad Pw Expiry",
+		Password:  ptrS("s3cret"),
+		ExpiresAt: ptrS("15-12-2026"),
+	})
+	if code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid password expires_at, got %d", code)
+	}
+
+	code, body = post(t, ts, "/api/v1/pages/p/groups/0/items?location=default", models.Item{
+		Title:     "Root Login",
+		Password:  ptrS("s3cret"),
+		ExpiresAt: ptrS(" 2026-12-20 "),
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("POST password item with expires_at: %d %v", code, body)
+	}
+
+	code, pageBody = get(t, ts, "/api/v1/pages/p?location=default")
+	if code != http.StatusOK {
+		t.Fatalf("GET page: %d", code)
+	}
+	groups = pageBody["groups"].([]interface{})
+	items = groups[0].(map[string]interface{})["items"].([]interface{})
+	pwItem := items[1].(map[string]interface{})
+	if pwItem["expires_at"] != "2026-12-20" {
+		t.Errorf("password expires_at = %v, want 2026-12-20", pwItem["expires_at"])
+	}
+
+	code, updatedBody = put(t, ts, "/api/v1/pages/p/groups/0/items/1?location=default", models.Item{
+		Title:     "Root Login",
+		Password:  ptrS("s3cret2"),
+		ExpiresAt: ptrS(""),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("PUT password item clearing expires_at: %d %v", code, updatedBody)
+	}
+	if _, hasExp := updatedBody["expires_at"]; hasExp {
+		t.Errorf("expected cleared password expires_at, got %v", updatedBody["expires_at"])
+	}
+}
+
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------

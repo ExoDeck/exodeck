@@ -31,6 +31,13 @@ function isEditingEncryptedContent(ws) {
       return true;
     }
   }
+  const tokenWin = document.getElementById('_tokenWindow');
+  if (tokenWin && (state.currentLocation || '') === ws) {
+    const editPane = tokenWin.querySelector('.token-edit');
+    if (editPane && !editPane.hidden) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -189,7 +196,7 @@ export async function lockVault(location = null) {
       state.vaultStatus[ws].expires_in_seconds = 0;
     }
     // Refresh page data
-    if (state.currentSlug) {
+    if (state.currentSlug && isGridPage()) {
       state.currentPage = await apiFetch(withLocation(`/pages/${state.currentSlug}`, ws));
       renderPage(state.currentPage);
     }
@@ -322,7 +329,7 @@ export async function promptUnlockVault(location = null, options = {}) {
         }
 
         // Refetch and re-render current page unless preserving active editor state
-        if (refreshPage && state.currentSlug) {
+        if (refreshPage && state.currentSlug && isGridPage()) {
           state.currentPage = await apiFetch(withLocation(`/pages/${state.currentSlug}`, ws));
           renderPage(state.currentPage);
         }
@@ -667,7 +674,8 @@ export function getVaultMenuAction(location = null) {
       icon: 'lock_open',
       iconColor: 'var(--color-accent)',
       label: `Lock Vault (${mins}m)`,
-      title: `Vault unlocked (~${mins}m idle remaining). Click to lock now.`,
+      shortcut: 'l',
+      title: `Vault unlocked (~${mins}m idle remaining). Click to lock now (l).`,
       onClick: async () => {
         await lockVault(ws);
       },
@@ -678,11 +686,28 @@ export function getVaultMenuAction(location = null) {
     icon: 'lock',
     iconColor: 'var(--color-warning)',
     label: 'Unlock Vault',
-    title: 'Vault locked. Click to unlock with Master Password.',
+    shortcut: 'l',
+    title: 'Vault locked. Click to unlock with Master Password (l).',
     onClick: async () => {
       await promptUnlockVault(ws);
     },
   };
+}
+
+/**
+ * Lock or unlock the vault for the active (or specified) workspace.
+ * @param {string|null} [location]
+ */
+export async function toggleVaultLock(location = null) {
+  const ws = location || state.currentLocation || '';
+  if (!ws || isHelpWorkspace(ws)) return;
+  const status = await fetchVaultStatus(ws);
+  if (!status.configured) return;
+  if (status.unlocked) {
+    await lockVault(ws);
+  } else {
+    await promptUnlockVault(ws);
+  }
 }
 
 /**
