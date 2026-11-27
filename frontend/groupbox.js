@@ -8,6 +8,7 @@ import { renderMarkdownToElement, updateMarkdownCheckbox } from './markdown-util
 import { renderNoteItem, renderEncryptedNoteItem, openNoteWindow, openEncryptedNoteWindow } from './notes.js';
 import { buildInfoTable } from './note.js';
 import { renderPasswordItem, openPasswordWindow } from './password.js';
+import { renderTokenItem, openTokenWindow } from './token.js';
 import { renderTaskItem, openAddTaskModal, getDueStatus, formatDate } from './task.js';
 import { canEncryptWorkspace, ensureVaultUnlocked, fetchVaultStatus } from './vault.js';
 import {
@@ -152,6 +153,12 @@ function buildItemEl(item, originalIndex, groupIndex, slug, location, deleteMode
 
   if (item.password != null) {
     const el = renderPasswordItem(item, originalIndex, groupIndex, slug, location);
+    el.dataset.itemIndex = String(originalIndex);
+    el.dataset.groupIndex = String(groupIndex);
+    el.prepend(itemDragHandle);
+    return el;
+  } else if (item.token != null) {
+    const el = renderTokenItem(item, originalIndex, groupIndex, slug, location);
     el.dataset.itemIndex = String(originalIndex);
     el.dataset.groupIndex = String(groupIndex);
     el.prepend(itemDragHandle);
@@ -362,6 +369,12 @@ export async function addItemToGroup(type, groupIndex, slug, location) {
       const ok = await ensureVaultUnlocked(location);
       if (!ok) return;
       openPasswordWindow(null, null, groupIndex, slug, location, 'edit');
+      break;
+    }
+    case 'token': {
+      const ok = await ensureVaultUnlocked(location);
+      if (!ok) return;
+      openTokenWindow(null, null, groupIndex, slug, location, 'edit');
       break;
     }
     case 'enc_note': {
@@ -1130,8 +1143,10 @@ export function renderGroup(group, groupIndex, slug, location = null) {
       { action: 'add-link', label: 'Add link', icon: 'open_in_new' },
       { action: 'add-note', label: 'Add note', icon: 'description' },
       ...(canEncrypt ? [{ action: 'add-enc-note', label: 'Add encrypted note', icon: 'lock' }] : []),
-      { action: 'add-task', label: 'Add Task', icon: 'check' },
-      ...(canEncrypt ? [{ action: 'add-password', label: 'Add password', icon: 'key' }] : []),
+      { action: 'add-task', label: 'Add task', icon: 'check' },
+      ...(canEncrypt ? [{ action: 'add-password', label: 'Add password', icon: 'password' }] : []),
+      ...(canEncrypt ? [{ action: 'add-token', label: 'Add token', icon: 'key' }] : []),
+      { divider: true },
       { action: 'delete-items', label: 'Delete items', icon: 'delete' },
       { action: 'change-color', label: 'Change color', icon: 'palette' },
       { action: 'move-box', label: 'Move to \u2026', icon: 'open_with' },
@@ -1148,11 +1163,9 @@ export function renderGroup(group, groupIndex, slug, location = null) {
       group.color = colorId;
       card.dataset.stickyColor = colorId;
       try {
-        await persistStickyGroupUpdate(groupIndex, slug, location, {
-          ...group,
-          color: colorId,
-          items: group.items ?? [],
-        });
+        const groupMeta = { ...group, color: colorId };
+        delete groupMeta.items;
+        await persistStickyGroupUpdate(groupIndex, slug, location, groupMeta);
       } catch (err) {
         group.color = prevColor;
         card.dataset.stickyColor = prevColor;
@@ -1205,6 +1218,7 @@ export function renderGroup(group, groupIndex, slug, location = null) {
   const doAddNote = () => addItemToGroup('note', groupIndex, slug, location);
   const doAddTask = () => addItemToGroup('task', groupIndex, slug, location);
   const doAddPassword = () => addItemToGroup('password', groupIndex, slug, location);
+  const doAddToken = () => addItemToGroup('token', groupIndex, slug, location);
   const doAddEncryptedNote = () => addItemToGroup('enc_note', groupIndex, slug, location);
 
   const doDeleteItems = () => {
@@ -1268,7 +1282,7 @@ export function renderGroup(group, groupIndex, slug, location = null) {
       openMoveGroupModal(group, groupIndex, slug, location);
       return;
     }
-    const handlers = { 'add-link': doAddLink, 'add-note': doAddNote, 'add-enc-note': doAddEncryptedNote, 'add-task': doAddTask, 'add-password': doAddPassword, 'delete-items': doDeleteItems, 'delete-box': doDeleteBox };
+    const handlers = { 'add-link': doAddLink, 'add-note': doAddNote, 'add-enc-note': doAddEncryptedNote, 'add-task': doAddTask, 'add-password': doAddPassword, 'add-token': doAddToken, 'delete-items': doDeleteItems, 'delete-box': doDeleteBox };
     handlers[btn.dataset.action]?.().catch(err => console.error('[ExoDeck] Action failed:', err));
   });
 

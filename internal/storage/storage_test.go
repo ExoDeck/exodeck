@@ -1300,3 +1300,108 @@ func TestStickyNoteDueNotificationsAndTaskStatus(t *testing.T) {
 		t.Errorf("expected sticky notes to be excluded from GetAllTasks(), got %+v", all)
 	}
 }
+
+func TestTokenExpiryNotificationsAndPageStatus(t *testing.T) {
+	store, dir := makeStore(t)
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	yesterdayStr := today.AddDate(0, 0, -1).Format("2006-01-02")
+	todayStr := today.Format("2006-01-02")
+	plus1Str := today.AddDate(0, 0, 1).Format("2006-01-02")
+	plus3Str := today.AddDate(0, 0, 3).Format("2006-01-02")
+	plus4Str := today.AddDate(0, 0, 4).Format("2006-01-02")
+
+	tok := "v1:encrypted"
+	pw := "v1:encrypted-pw"
+
+	pageSoon := models.Page{
+		PageName: "Soon Tokens",
+		Groups: []models.Group{
+			{
+				Title: "API",
+				Items: []models.Item{
+					{Title: "Expires 3d", Token: &tok, ExpiresAt: &plus3Str},
+					{Title: "Expires 4d", Token: &tok, ExpiresAt: &plus4Str},
+					{Title: "No Expiry", Token: &tok},
+					{Title: "Pw Expires 2d", Password: &pw, ExpiresAt: &plus1Str},
+				},
+			},
+		},
+	}
+	if st := storage.GetPageTaskStatus(pageSoon); st != "due_soon" {
+		t.Errorf("GetPageTaskStatus(pageSoon) = %q, want 'due_soon'", st)
+	}
+
+	pageExpired := models.Page{
+		PageName: "Expired Tokens",
+		Groups: []models.Group{
+			{
+				Title: "API",
+				Items: []models.Item{
+					{Title: "Expired Yesterday", Token: &tok, ExpiresAt: &yesterdayStr},
+					{Title: "Expires Today", Token: &tok, ExpiresAt: &todayStr},
+					{Title: "Expires 1d", Token: &tok, ExpiresAt: &plus1Str},
+					{Title: "Pw Expired", Password: &pw, ExpiresAt: &yesterdayStr},
+				},
+			},
+		},
+	}
+	if st := storage.GetPageTaskStatus(pageExpired); st != "overdue" {
+		t.Errorf("GetPageTaskStatus(pageExpired) = %q, want 'overdue'", st)
+	}
+
+	pageFar := models.Page{
+		PageName: "Far Tokens",
+		Groups: []models.Group{
+			{
+				Title: "API",
+				Items: []models.Item{
+					{Title: "Expires 4d", Token: &tok, ExpiresAt: &plus4Str},
+					{Title: "No Expiry", Token: &tok},
+					{Title: "Pw Far", Password: &pw, ExpiresAt: &plus4Str},
+				},
+			},
+		},
+	}
+	if st := storage.GetPageTaskStatus(pageFar); st != "" {
+		t.Errorf("GetPageTaskStatus(pageFar) = %q, want ''", st)
+	}
+
+	writeJSON(t, filepath.Join(dir, "soon-tokens.grid"), pageSoon)
+	writeJSON(t, filepath.Join(dir, "expired-tokens.grid"), pageExpired)
+	writeJSON(t, filepath.Join(dir, "far-tokens.grid"), pageFar)
+	store.InitCache()
+
+	due := store.GetDueTasks()
+	if len(due) != 6 {
+		t.Fatalf("expected 6 due/expiring token & password entries, got %d: %+v", len(due), due)
+	}
+
+	want := map[string]struct {
+		status   string
+		itemType string
+	}{
+		"Expired Yesterday": {"overdue", "token"},
+		"Expires Today":     {"overdue", "token"},
+		"Expires 1d":        {"due_soon", "token"},
+		"Expires 3d":        {"due_soon", "token"},
+		"Pw Expired":        {"overdue", "password"},
+		"Pw Expires 2d":     {"due_soon", "password"},
+	}
+	for _, entry := range due {
+		exp, ok := want[entry.Title]
+		if !ok || entry.DueStatus != exp.status || entry.ItemType != exp.itemType {
+			t.Errorf("unexpected notification %+v", entry)
+		}
+		delete(want, entry.Title)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing expected notifications: %+v", want)
+	}
+
+	// Tokens and passwords must NOT appear in GetAllTasks()
+	all := store.GetAllTasks()
+	if len(all) != 0 {
+		t.Errorf("expected token/password items to be excluded from GetAllTasks(), got %+v", all)
+	}
+}

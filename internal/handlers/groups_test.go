@@ -511,3 +511,85 @@ func TestStickyGroupDueDateAndTimestamps(t *testing.T) {
 		t.Errorf("expected 0 due notifications after clearing sticky due_date, got %v", dueTasks)
 	}
 }
+
+func TestUpdateGroupColorWhileVaultLocked(t *testing.T) {
+	ts, store, _ := newTestServer(t)
+
+	if status, errMsg := store.WritePage("vault-colors", models.Page{
+		PageName: "Vault Colors",
+		Groups:   []models.Group{{Title: "Secrets", Items: []models.Item{}}},
+	}, "default"); status != 0 {
+		t.Fatalf("seed page failed (%d): %s", status, errMsg)
+	}
+
+	code, _ := post(t, ts, "/api/v1/workspaces/default/vault/setup", map[string]string{"password": "MasterPassword123!"})
+	if code != http.StatusOK {
+		t.Fatalf("vault setup failed: %d", code)
+	}
+
+	pwPlain := "SuperSecretPw!"
+	tokPlain := "ghp_SecretToken999"
+	code, _ = post(t, ts, "/api/v1/pages/vault-colors/groups/0/items?location=default", models.Item{
+		Title:    "Email",
+		Password: &pwPlain,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("add password item failed: %d", code)
+	}
+	code, _ = post(t, ts, "/api/v1/pages/vault-colors/groups/0/items?location=default", models.Item{
+		Title: "GitHub PAT",
+		Token: &tokPlain,
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("add token item failed: %d", code)
+	}
+
+	code, _ = post(t, ts, "/api/v1/workspaces/default/vault/lock", nil)
+	if code != http.StatusOK {
+		t.Fatalf("vault lock failed: %d", code)
+	}
+
+	// Update group color while locked, omitting items
+	code, putBody := put(t, ts, "/api/v1/pages/vault-colors/groups/0?location=default", map[string]interface{}{
+		"title": "Secrets",
+		"color": "blue",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("PUT group color while locked failed: %d %v", code, putBody)
+	}
+	if putBody["color"] != "blue" {
+		t.Errorf("expected color 'blue', got %v", putBody["color"])
+	}
+	respItems, _ := putBody["items"].([]interface{})
+	if len(respItems) != 2 {
+		t.Fatalf("expected 2 masked items in response, got %d", len(respItems))
+	}
+	for _, rawIt := range respItems {
+		it := rawIt.(map[string]interface{})
+		if it["locked"] != true {
+			t.Errorf("expected item %v to be masked/locked", it["title"])
+		}
+	}
+
+	// Unlock and confirm encrypted items were preserved and decrypt cleanly
+	code, _ = post(t, ts, "/api/v1/workspaces/default/vault/unlock", map[string]string{"password": "MasterPassword123!"})
+	if code != http.StatusOK {
+		t.Fatalf("vault unlock failed: %d", code)
+	}
+	code, pageBody := get(t, ts, "/api/v1/pages/vault-colors?location=default")
+	if code != http.StatusOK {
+		t.Fatalf("GET page after unlock failed: %d", code)
+	}
+	groups := pageBody["groups"].([]interface{})
+	g0 := groups[0].(map[string]interface{})
+	if g0["color"] != "blue" {
+		t.Errorf("expected persisted color 'blue', got %v", g0["color"])
+	}
+	items := g0["items"].([]interface{})
+	if items[0].(map[string]interface{})["password"] != pwPlain {
+		t.Errorf("password corrupted after locked color change: %v", items[0])
+	}
+	if items[1].(map[string]interface{})["token"] != tokPlain {
+		t.Errorf("token corrupted after locked color change: %v", items[1])
+	}
+}

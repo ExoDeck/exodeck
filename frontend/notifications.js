@@ -38,6 +38,27 @@ function formatDueDate(isoDate) {
 }
 
 /**
+ * Format password/token expiration date for notification display.
+ * @param {string} isoDate YYYY-MM-DD
+ * @returns {string}
+ */
+function formatExpiryDate(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const exp = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((exp - today) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays > 1 && diffDays <= 3) return `in ${diffDays}d`;
+  if (diffDays === -1) return 'Yesterday';
+  if (diffDays < -1) return `${Math.abs(diffDays)}d ago`;
+  return exp.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/**
  * Format created date for display.
  * @param {string} isoDate
  * @returns {string}
@@ -114,13 +135,21 @@ function updateBadgeAndPanel() {
   btn.classList.toggle('notification--due-soon', !isUrgent);
 
   const parts = [];
-  const taskCount = dueTasks.filter(t => t.item_type !== 'sticky').length;
+  const taskCount = dueTasks.filter(t => t.item_type !== 'sticky' && t.item_type !== 'token' && t.item_type !== 'password').length;
   const stickyCount = dueTasks.filter(t => t.item_type === 'sticky').length;
+  const tokenCount = dueTasks.filter(t => t.item_type === 'token').length;
+  const passwordCount = dueTasks.filter(t => t.item_type === 'password').length;
   if (taskCount > 0) {
     parts.push(`${taskCount} task${taskCount === 1 ? '' : 's'}`);
   }
   if (stickyCount > 0) {
     parts.push(`${stickyCount} sticky note${stickyCount === 1 ? '' : 's'}`);
+  }
+  if (tokenCount > 0) {
+    parts.push(`${tokenCount} expiring token${tokenCount === 1 ? '' : 's'}`);
+  }
+  if (passwordCount > 0) {
+    parts.push(`${passwordCount} expiring password${passwordCount === 1 ? '' : 's'}`);
   }
   if (syncWorkspaces.length > 0) {
     parts.push(`${syncWorkspaces.length} workspace${syncWorkspaces.length === 1 ? '' : 's'} requiring git sync`);
@@ -231,9 +260,19 @@ function highlightTaskOnGrid(entry) {
       `.item[data-group-index="${entry.group_index}"][data-item-index="${entry.item_index}"]`
     );
     if (!itemEl) {
-      itemEl = Array.from(document.querySelectorAll('.item--task')).find(
-        el => el.querySelector('.item__task-title')?.textContent?.trim() === entry.title.trim()
-      );
+      if (entry.item_type === 'token') {
+        itemEl = Array.from(document.querySelectorAll('.item--token')).find(
+          el => el.querySelector('.item__token-title-btn')?.textContent?.trim() === entry.title.trim()
+        );
+      } else if (entry.item_type === 'password') {
+        itemEl = Array.from(document.querySelectorAll('.item--password')).find(
+          el => el.querySelector('.item__password-title-btn')?.textContent?.trim() === entry.title.trim()
+        );
+      } else {
+        itemEl = Array.from(document.querySelectorAll('.item--task')).find(
+          el => el.querySelector('.item__task-title')?.textContent?.trim() === entry.title.trim()
+        );
+      }
     }
     if (itemEl) {
       document.querySelectorAll('.group-card--focused, .item--focused').forEach(el => {
@@ -271,7 +310,10 @@ function createNotificationItem(task) {
 
   const statusPill = document.createElement('span');
   statusPill.className = 'notification-item__pill';
-  if (isOverdue) {
+  const isExpiring = task.item_type === 'token' || task.item_type === 'password';
+  if (isExpiring) {
+    statusPill.textContent = isOverdue ? 'Expired' : 'Expiring';
+  } else if (isOverdue) {
     statusPill.textContent = 'Overdue';
   } else if (isDueSoon) {
     statusPill.textContent = 'Due Soon';
@@ -301,8 +343,8 @@ function createNotificationItem(task) {
   const dateEl = document.createElement('span');
   dateEl.className = 'notification-item__date';
   if (task.due_date) {
-    dateEl.textContent = formatDueDate(task.due_date);
-    dateEl.title = `Due: ${task.due_date}`;
+    dateEl.textContent = isExpiring ? formatExpiryDate(task.due_date) : formatDueDate(task.due_date);
+    dateEl.title = isExpiring ? `Expires: ${task.due_date}` : `Due: ${task.due_date}`;
   } else {
     const createdStr = task.task_created || task.created_at;
     if (createdStr) {
@@ -475,7 +517,7 @@ function renderNotificationsList(list) {
   }
 
   const showSectionTitles = syncWorkspaces.length > 0 && dueTasks.length > 0;
-  const hasSticky = dueTasks.some(t => t.item_type === 'sticky');
+  const hasStickyOrExpiring = dueTasks.some(t => t.item_type === 'sticky' || t.item_type === 'token' || t.item_type === 'password');
   appendNotificationSection(
     list,
     showSectionTitles ? `Git Sync (${syncWorkspaces.length})` : '',
@@ -484,7 +526,7 @@ function renderNotificationsList(list) {
   );
   appendNotificationSection(
     list,
-    showSectionTitles ? `${hasSticky ? 'Due Items' : 'Due Tasks'} (${dueTasks.length})` : '',
+    showSectionTitles ? `${hasStickyOrExpiring ? 'Due & Expiring' : 'Due Tasks'} (${dueTasks.length})` : '',
     dueTasks,
     createNotificationItem
   );

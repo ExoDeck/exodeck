@@ -15,7 +15,7 @@ const ICONS = [
     'keyboard_arrow_down', 'keyboard_arrow_up', 'more_horiz', 'more_vert',
     'open_with', 'print', 'unfold_more', 'unfold_less', 'arrow_back',
     'grid_view', 'description', 'draw', 'schema', 'folder', 'sync', 'help', 'settings',
-    'key', 'lock', 'drag_indicator', 'notifications'
+    'key', 'password', 'lock', 'drag_indicator', 'notifications'
 ];
 
 // Deduplicate and encode icons

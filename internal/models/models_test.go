@@ -10,6 +10,7 @@ func TestItemType(t *testing.T) {
 	urlStr := "https://example.com"
 	pwStr := "secret"
 	otpStr := "JBSWY3DPEHPK3PXP"
+	tokStr := "ghp_secretToken123"
 	encTextStr := "gAAAAA..."
 	taskChecked := false
 
@@ -32,6 +33,11 @@ func TestItemType(t *testing.T) {
 			name:     "password item with otp only",
 			item:     models.Item{OTPSecret: &otpStr},
 			expected: "password",
+		},
+		{
+			name:     "token item",
+			item:     models.Item{Token: &tokStr},
+			expected: "token",
 		},
 		{
 			name:     "encrypted note item",

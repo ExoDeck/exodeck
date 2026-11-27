@@ -86,7 +86,7 @@ export function formatDate(isoDate) {
 export function openTaskWindow(item, itemIndex, groupIndex, slug, location, initialMode = 'view') {
   document.getElementById('_taskWindow')?.remove();
 
-  let currentItem = { ...item };
+  const currentItem = { ...item };
 
   const {
     overlay,
@@ -205,8 +205,7 @@ export function openTaskWindow(item, itemIndex, groupIndex, slug, location, init
 
   // ---- Mode helpers ----
 
-  function switchToView(updatedItem) {
-    if (updatedItem) currentItem = updatedItem;
+  function switchToView() {
     titleEl.textContent = currentItem.title;
 
     // Meta row: due date + created date
@@ -275,7 +274,7 @@ export function openTaskWindow(item, itemIndex, groupIndex, slug, location, init
     primaryBtn.textContent = 'Save';
     secondaryBtn.textContent = 'Cancel';
     primaryBtn.onclick = saveTask;
-    secondaryBtn.onclick = () => { void requestSwitchToView(); };
+    secondaryBtn.onclick = () => { void requestCancelEdit(); };
     titleInput.focus();
   }
 
@@ -290,12 +289,12 @@ export function openTaskWindow(item, itemIndex, groupIndex, slug, location, init
       completedInput.checked !== origCompleted;
   };
 
-  async function requestSwitchToView() {
+  async function requestCancelEdit() {
     if (isEditDirty()) {
       const discard = await openConfirmModal();
       if (!discard) return;
     }
-    switchToView();
+    closeWindow();
   }
 
   async function saveTask() {
@@ -326,7 +325,7 @@ export function openTaskWindow(item, itemIndex, groupIndex, slug, location, init
 
     renderPage(state.currentPage);
     primaryBtn.disabled = false;
-    switchToView(updated);
+    closeWindow();
   }
 
   function closeWindow() {
@@ -347,7 +346,7 @@ export function openTaskWindow(item, itemIndex, groupIndex, slug, location, init
       if (editDiv.hidden) {
         closeWindow();
       } else {
-        void requestSwitchToView();
+        void requestCancelEdit();
       }
     }
   }

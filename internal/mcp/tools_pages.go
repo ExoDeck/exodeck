@@ -474,11 +474,12 @@ type MCPItemInput struct {
 	Notes       *string `json:"notes,omitempty"`
 	Markdown    *string `json:"markdown,omitempty"`
 	Text        *string `json:"text,omitempty"`
-	Password    *string `json:"password,omitempty"`
-	OTPSecret   *string `json:"otp_secret,omitempty"`
-	EncText     *string `json:"enc_text,omitempty"`
-	TaskChecked *bool   `json:"task_checked,omitempty"`
-	TaskDueDate *string `json:"task_due_date,omitempty"`
+	Password         *string `json:"password,omitempty"`
+	OTPSecret        *string `json:"otp_secret,omitempty"`
+	EncText          *string `json:"enc_text,omitempty"`
+	Token            *string `json:"token,omitempty"`
+	TaskChecked      *bool   `json:"task_checked,omitempty"`
+	TaskDueDate      *string `json:"task_due_date,omitempty"`
 }
 
 // MCPGroupInput represents input parameters for creating a group or sticky note.
@@ -510,7 +511,7 @@ func normalizeGroupColor(raw string) (string, error) {
 }
 
 func isSensitiveItem(item models.Item) bool {
-	if item.Password != nil || item.OTPSecret != nil || item.EncText != nil {
+	if item.Password != nil || item.OTPSecret != nil || item.EncText != nil || item.Token != nil {
 		return true
 	}
 	if item.Locked != nil && *item.Locked {
@@ -607,9 +608,9 @@ func sanitizePageForRead(slug, workspace string, page models.Page) MCPPage {
 }
 
 func buildItemFromInput(in MCPItemInput) (models.Item, error) {
-	if in.Password != nil || in.OTPSecret != nil || in.EncText != nil ||
-		strings.EqualFold(in.ItemType, "password") || strings.EqualFold(in.ItemType, "enc_note") {
-		return models.Item{}, errors.New("creating or modifying password/encrypted items is not permitted via MCP")
+	if in.Password != nil || in.OTPSecret != nil || in.EncText != nil || in.Token != nil ||
+		strings.EqualFold(in.ItemType, "password") || strings.EqualFold(in.ItemType, "enc_note") || strings.EqualFold(in.ItemType, "token") {
+		return models.Item{}, errors.New("creating or modifying password/encrypted/token items is not permitted via MCP")
 	}
 
 	title := strings.TrimSpace(in.Title)
@@ -1412,6 +1413,7 @@ func (s *Server) toolUpdateItem(_ context.Context, args json.RawMessage) (interf
 		Password    *string `json:"password"`
 		OTPSecret   *string `json:"otp_secret"`
 		EncText     *string `json:"enc_text"`
+		Token       *string `json:"token"`
 		TaskChecked *bool   `json:"task_checked"`
 		TaskDueDate *string `json:"task_due_date"`
 	}
@@ -1419,9 +1421,9 @@ func (s *Server) toolUpdateItem(_ context.Context, args json.RawMessage) (interf
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	if in.Password != nil || in.OTPSecret != nil || in.EncText != nil ||
-		strings.EqualFold(in.ItemType, "password") || strings.EqualFold(in.ItemType, "enc_note") {
-		return nil, errors.New("creating or modifying password/encrypted items is not permitted via MCP")
+	if in.Password != nil || in.OTPSecret != nil || in.EncText != nil || in.Token != nil ||
+		strings.EqualFold(in.ItemType, "password") || strings.EqualFold(in.ItemType, "enc_note") || strings.EqualFold(in.ItemType, "token") {
+		return nil, errors.New("creating or modifying password/encrypted/token items is not permitted via MCP")
 	}
 
 	wsName, _, st, errMsg := s.Store.ResolveWorkspace(in.Workspace)

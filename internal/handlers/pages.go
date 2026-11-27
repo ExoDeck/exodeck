@@ -279,10 +279,12 @@ func (s *Server) deletePage(w http.ResponseWriter, r *http.Request) {
 // --------------------------------------------------------------------------
 
 type preparedGroup struct {
-	group     models.Group
-	page      models.Page
-	key       []byte
-	fernetKey string
+	group         models.Group
+	page          models.Page
+	key           []byte
+	fernetKey     string
+	isLocked      bool
+	itemsProvided bool
 }
 
 func (s *Server) decodeAndPrepareGroup(w http.ResponseWriter, r *http.Request, slug, location string) (preparedGroup, bool) {
@@ -290,21 +292,20 @@ func (s *Server) decodeAndPrepareGroup(w http.ResponseWriter, r *http.Request, s
 	if !decodeJSON(w, r, &prep.group) {
 		return prep, false
 	}
-	if prep.group.Items == nil {
-		prep.group.Items = []models.Item{}
-	}
+	prep.itemsProvided = prep.group.Items != nil
 
 	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)
 	if status != 0 {
 		jsonError(w, status, errMsg)
 		return prep, false
 	}
-	if isLocked && groupHasSensitiveItems(prep.group) {
-		jsonError(w, http.StatusLocked, msgVaultLocked)
-		return prep, false
+	if prep.itemsProvided {
+		if isLocked && groupHasSensitiveItems(prep.group) {
+			jsonError(w, http.StatusLocked, msgVaultLocked)
+			return prep, false
+		}
+		encryptItems(prep.group.Items, key, fernetKey)
 	}
-
-	encryptItems(prep.group.Items, key, fernetKey)
 
 	page, httpStatus, errMsg := s.Store.ReadPage(slug, location)
 	if httpStatus != 0 {
@@ -314,6 +315,7 @@ func (s *Server) decodeAndPrepareGroup(w http.ResponseWriter, r *http.Request, s
 	prep.page = page
 	prep.key = key
 	prep.fernetKey = fernetKey
+	prep.isLocked = isLocked
 	return prep, true
 }
 
@@ -339,6 +341,9 @@ func (s *Server) addGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	normalizeGroupDueDate(&prep.group)
+	if prep.group.Items == nil {
+		prep.group.Items = []models.Item{}
+	}
 	now := time.Now().Format(time.RFC3339)
 	if prep.group.CreatedAt == nil {
 		prep.group.CreatedAt = &now
@@ -373,6 +378,12 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 
 	normalizeGroupDueDate(&prep.group)
 	existing := prep.page.Groups[groupIndex]
+	if !prep.itemsProvided {
+		prep.group.Items = existing.Items
+	}
+	if prep.group.Items == nil {
+		prep.group.Items = []models.Item{}
+	}
 	if existing.CreatedAt != nil {
 		prep.group.CreatedAt = existing.CreatedAt
 	}
@@ -385,7 +396,11 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decryptItems(prep.group.Items, prep.key, prep.fernetKey)
+	if prep.isLocked {
+		maskItems(prep.group.Items)
+	} else {
+		decryptItems(prep.group.Items, prep.key, prep.fernetKey)
+	}
 	jsonOK(w, prep.group)
 }
 
@@ -502,18 +517,8 @@ func (s *Server) addItem(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &item) {
 		return
 	}
-	if item.OTPSecret != nil {
-		trimmed := strings.TrimSpace(*item.OTPSecret)
-		if trimmed == "" {
-			item.OTPSecret = nil
-		} else {
-			cleanSecret, err := validateAndCleanOTPSecret(trimmed)
-			if err != nil {
-				jsonError(w, http.StatusBadRequest, "invalid OTP secret: "+err.Error())
-				return
-			}
-			item.OTPSecret = &cleanSecret
-		}
+	if !prepareTokenAndOTP(w, &item) {
+		return
 	}
 
 	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)
@@ -521,7 +526,7 @@ func (s *Server) addItem(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, status, errMsg)
 		return
 	}
-	if isLocked && (item.Password != nil || item.OTPSecret != nil || item.EncText != nil) {
+	if isLocked && isSensitiveItem(item) {
 		jsonError(w, http.StatusLocked, msgVaultLocked)
 		return
 	}
@@ -565,18 +570,8 @@ func (s *Server) updateItem(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &item) {
 		return
 	}
-	if item.OTPSecret != nil {
-		trimmed := strings.TrimSpace(*item.OTPSecret)
-		if trimmed == "" {
-			item.OTPSecret = nil
-		} else {
-			cleanSecret, err := validateAndCleanOTPSecret(trimmed)
-			if err != nil {
-				jsonError(w, http.StatusBadRequest, "invalid OTP secret: "+err.Error())
-				return
-			}
-			item.OTPSecret = &cleanSecret
-		}
+	if !prepareTokenAndOTP(w, &item) {
+		return
 	}
 
 	_, _, key, fernetKey, isLocked, status, errMsg := s.resolveEncryption(location)
@@ -584,7 +579,7 @@ func (s *Server) updateItem(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, status, errMsg)
 		return
 	}
-	if isLocked && (item.Password != nil || item.OTPSecret != nil || item.EncText != nil) {
+	if isLocked && isSensitiveItem(item) {
 		jsonError(w, http.StatusLocked, msgVaultLocked)
 		return
 	}
@@ -1266,14 +1261,53 @@ func (s *Server) moveBpmnToLocation(w http.ResponseWriter, r *http.Request) {
 // Crypto helpers
 // --------------------------------------------------------------------------
 
+func isSensitiveItem(item models.Item) bool {
+	return item.Password != nil || item.OTPSecret != nil || item.EncText != nil || item.Token != nil
+}
+
+func normalizeExpiresAt(item *models.Item) error {
+	if item.ExpiresAt == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*item.ExpiresAt)
+	if trimmed == "" {
+		item.ExpiresAt = nil
+		return nil
+	}
+	if _, err := time.Parse("2006-01-02", trimmed); err != nil {
+		return fmt.Errorf("invalid expires_at %q: expected YYYY-MM-DD", trimmed)
+	}
+	item.ExpiresAt = &trimmed
+	return nil
+}
+
+func prepareTokenAndOTP(w http.ResponseWriter, item *models.Item) bool {
+	if item.OTPSecret != nil {
+		trimmed := strings.TrimSpace(*item.OTPSecret)
+		if trimmed == "" {
+			item.OTPSecret = nil
+		} else {
+			cleanSecret, err := validateAndCleanOTPSecret(trimmed)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid OTP secret: "+err.Error())
+				return false
+			}
+			item.OTPSecret = &cleanSecret
+		}
+	}
+	if err := normalizeExpiresAt(item); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	return true
+}
+
 // pageHasSensitiveItems returns true if any item in the page carries a field
-// that is Fernet or AES-GCM encrypted on disk (Password, OTPSecret, EncText).
+// that is Fernet or AES-GCM encrypted on disk (Password, OTPSecret, EncText, Token).
 func pageHasSensitiveItems(page models.Page) bool {
 	for _, g := range page.Groups {
-		for _, item := range g.Items {
-			if item.Password != nil || item.OTPSecret != nil || item.EncText != nil {
-				return true
-			}
+		if groupHasSensitiveItems(g) {
+			return true
 		}
 	}
 	return false
@@ -1281,7 +1315,7 @@ func pageHasSensitiveItems(page models.Page) bool {
 
 func groupHasSensitiveItems(group models.Group) bool {
 	for _, item := range group.Items {
-		if item.Password != nil || item.OTPSecret != nil || item.EncText != nil {
+		if isSensitiveItem(item) {
 			return true
 		}
 	}
@@ -1318,12 +1352,15 @@ func encryptItem(item *models.Item, key []byte, fernetKey string) {
 	item.Password = encryptField(item.Password, key, fernetKey)
 	item.OTPSecret = encryptField(item.OTPSecret, key, fernetKey)
 	item.EncText = encryptField(item.EncText, key, fernetKey)
+	item.Token = encryptField(item.Token, key, fernetKey)
 
-	// For AES-256-GCM vault, also encrypt Username, PwURL, PwNotes
+	// For AES-256-GCM vault, also encrypt Username, PwURL, PwNotes, TokenURL, TokenDescription
 	if len(key) == 32 {
 		item.Username = encryptField(item.Username, key, "")
 		item.PwURL = encryptField(item.PwURL, key, "")
 		item.PwNotes = encryptField(item.PwNotes, key, "")
+		item.TokenURL = encryptField(item.TokenURL, key, "")
+		item.TokenDescription = encryptField(item.TokenDescription, key, "")
 	}
 }
 
@@ -1331,6 +1368,7 @@ func decryptItem(item *models.Item, key []byte, fernetKey string) {
 	item.Password = decryptField(item.Password, key, fernetKey, false)
 	item.OTPSecret = decryptField(item.OTPSecret, key, fernetKey, false)
 	item.EncText = decryptField(item.EncText, key, fernetKey, false)
+	item.Token = decryptField(item.Token, key, fernetKey, false)
 
 	// If OTPSecret failed to decrypt (e.g. stranded Fernet token without Fernet key),
 	// do not leak undecrypted raw ciphertext to the client.
@@ -1341,6 +1379,8 @@ func decryptItem(item *models.Item, key []byte, fernetKey string) {
 	item.Username = decryptField(item.Username, key, "", true)
 	item.PwURL = decryptField(item.PwURL, key, "", true)
 	item.PwNotes = decryptField(item.PwNotes, key, "", true)
+	item.TokenURL = decryptField(item.TokenURL, key, "", true)
+	item.TokenDescription = decryptField(item.TokenDescription, key, "", true)
 }
 
 func maskItem(item *models.Item) {
@@ -1357,6 +1397,9 @@ func maskItem(item *models.Item) {
 	if item.EncText != nil {
 		item.EncText = &masked
 	}
+	if item.Token != nil {
+		item.Token = &masked
+	}
 	if item.Username != nil && crypto.IsAESGCMToken(*item.Username) {
 		item.Username = &masked
 	}
@@ -1365,6 +1408,12 @@ func maskItem(item *models.Item) {
 	}
 	if item.PwNotes != nil && crypto.IsAESGCMToken(*item.PwNotes) {
 		item.PwNotes = &empty
+	}
+	if item.TokenURL != nil && crypto.IsAESGCMToken(*item.TokenURL) {
+		item.TokenURL = &empty
+	}
+	if item.TokenDescription != nil && crypto.IsAESGCMToken(*item.TokenDescription) {
+		item.TokenDescription = &empty
 	}
 }
 
@@ -1382,7 +1431,7 @@ func decryptItems(items []models.Item, key []byte, fernetKey string) {
 
 func maskItems(items []models.Item) {
 	for i := range items {
-		if items[i].Password != nil || items[i].OTPSecret != nil || items[i].EncText != nil {
+		if isSensitiveItem(items[i]) {
 			maskItem(&items[i])
 		}
 	}
